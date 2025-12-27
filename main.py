@@ -40,6 +40,13 @@ def main():
         logger.info("Starting FPS measurement (10 seconds)...")
         start_time = time.time()
         
+        # Position windows diagonally in dev mode
+        if args.dev_mode:
+            for i, camera_id in enumerate(camera_ids):
+                cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
+                cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
+        
         while time.time() - start_time < 10.0:
             for camera_id in camera_ids:
                 frame = camera_manager.get_latest_frame(camera_id)
