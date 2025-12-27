@@ -1,0 +1,8 @@
+[camera]
+device_index = 0
+width = 800
+height = 600
+fps = 25
+fourcc = "MJPG"
+auto_exposure = false
+exposure = -6  # Adjust based on LED brightness (typically -7 to -4)
