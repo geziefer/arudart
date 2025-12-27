@@ -24,36 +24,47 @@ def main():
     
     # Initialize camera manager
     camera_manager = CameraManager(config)
+    
+    # Check if any cameras are available
+    if not camera_manager.get_camera_ids():
+        logger.error("No cameras available - exiting")
+        return
+    
     camera_manager.start_all()
     
-    # FPS counter
-    fps_counter = FPSCounter()
-    camera_id = config['camera']['device_index']
+    # FPS counters per camera
+    camera_ids = camera_manager.get_camera_ids()
+    fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
     
     try:
         logger.info("Starting FPS measurement (10 seconds)...")
         start_time = time.time()
         
         while time.time() - start_time < 10.0:
-            frame = camera_manager.get_latest_frame(camera_id)
-            
-            if frame is not None:
-                fps_counter.tick()
+            for camera_id in camera_ids:
+                frame = camera_manager.get_latest_frame(camera_id)
                 
-                if args.dev_mode:
-                    # Show preview with FPS overlay
-                    fps = fps_counter.get_fps()
-                    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    cv2.imshow(f"Camera {camera_id}", frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
+                if frame is not None:
+                    fps_counters[camera_id].tick()
+                    
+                    if args.dev_mode:
+                        # Show preview with FPS overlay
+                        fps = fps_counters[camera_id].get_fps()
+                        cv2.putText(frame, f"Camera {camera_id} - FPS: {fps:.1f}", (10, 30), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.imshow(f"Camera {camera_id}", frame)
             
-            time.sleep(0.01)  # Small delay to prevent busy loop
+            if args.dev_mode:
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            else:
+                time.sleep(0.01)
         
         # Final FPS report
-        final_fps = fps_counter.get_fps()
-        logger.info(f"Camera {camera_id} - Final FPS: {final_fps:.2f}")
+        logger.info("=== Final FPS Report ===")
+        for camera_id in camera_ids:
+            final_fps = fps_counters[camera_id].get_fps()
+            logger.info(f"Camera {camera_id}: {final_fps:.2f} FPS")
         
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

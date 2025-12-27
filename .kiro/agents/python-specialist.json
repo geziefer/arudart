@@ -9,7 +9,8 @@
   "toolAliases": {},
   "allowedTools": ["read", "write", "shell"],
   "resources": [
-    "file://project.md"
+    "file://project.md",
+    "file://IMPLEMENTATION_PLAN.md"
   ],
   "hooks": {},
   "toolsSettings": {},

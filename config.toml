@@ -1,8 +1,15 @@
-[camera]
-device_index = 0
+[camera_detection]
+auto_detect = true
+num_cameras = 3
+min_width = 800
+min_height = 600
+exclude_builtin = true
+max_index = 10
+
+[camera_settings]
 width = 800
 height = 600
 fps = 25
 fourcc = "MJPG"
 auto_exposure = false
-exposure = -6  # Adjust based on LED brightness (typically -7 to -4)
+exposure = -6

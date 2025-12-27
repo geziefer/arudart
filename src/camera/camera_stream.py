@@ -14,11 +14,13 @@ class CameraStream:
         self.lock = threading.Lock()
         self.running = False
         self.thread = None
+        self.opened = False
         
         # Open camera
         self.cap = cv2.VideoCapture(device_index)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open camera {device_index}")
+            self.logger.warning(f"Failed to open camera {device_index}")
+            return
         
         # Set properties
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
@@ -36,10 +38,11 @@ class CameraStream:
         actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.logger.info(f"Camera {device_index} opened: {actual_width}x{actual_height} @ {actual_fps} FPS")
+        self.opened = True
     
     def start(self):
         """Start capture thread."""
-        if self.running:
+        if not self.opened or self.running:
             return
         self.running = True
         self.thread = threading.Thread(target=self._capture_loop, daemon=True)
