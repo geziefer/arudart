@@ -130,14 +130,13 @@ def main():
             
             # Initialize background on first frames
             if not background_initialized and len(frames) == len(camera_ids):
-                for camera_id, frame in frames.items():
-                    motion_detector.update_background(camera_id, frame)
-                    background_model.update_pre_impact(camera_id, frame)
-                background_initialized = True
-                logger.info("Background initialized for all cameras")
+                # Don't auto-initialize - wait for manual 'r' press
+                # This ensures clean board without person in frame
+                logger.info("=== Ready to initialize background - press 'r' when board is clear ===")
+                background_initialized = "waiting"  # Flag to show message only once
             
             # Check motion at intervals
-            if background_initialized and current_time - last_motion_check >= motion_check_interval:
+            if background_initialized == True and current_time - last_motion_check >= motion_check_interval:
                 last_motion_check = current_time
                 
                 # Use persistent change detection instead of transient motion
@@ -170,8 +169,8 @@ def main():
                             logger.info(f"Dart detected! Tip at ({tip_x}, {tip_y}), confidence: {confidence:.2f}")
                             
                             # Save annotated images
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            throw_dir = Path(f"data/throws/throw_{throw_count:03d}_{timestamp}")
+                            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                            throw_dir = Path(f"data/throws/{timestamp}_throw_{throw_count:03d}")
                             throw_dir.mkdir(parents=True, exist_ok=True)
                             
                             # Save annotated post frame
@@ -202,10 +201,8 @@ def main():
                         else:
                             logger.warning("No dart detected in settled frame")
                     
-                    # Update background for next throw
-                    for camera_id, frame in frames.items():
-                        motion_detector.update_background(camera_id, frame)
-                        background_model.update_pre_impact(camera_id, frame)
+                    # DON'T update background here - dart is still in board!
+                    # Background will be updated manually with 'r' key after darts removed
                     motion_state = "idle"
             
             # Display frames in dev mode
@@ -238,6 +235,13 @@ def main():
                 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+                elif cv2.waitKey(1) & 0xFF == ord('r'):
+                    # Manual background reset - press 'r' after removing darts or at startup
+                    for camera_id, frame in frames.items():
+                        motion_detector.update_background(camera_id, frame)
+                        background_model.update_pre_impact(camera_id, frame)
+                    background_initialized = True
+                    logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
             else:
                 time.sleep(0.01)
             
