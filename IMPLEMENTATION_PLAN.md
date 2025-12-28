@@ -127,77 +127,74 @@
 
 ---
 
-### ⬜ Step 3: Basic Motion Detection (Impact Detection)
-**Status**: NOT STARTED  
+### ✅ Step 3: Basic Motion Detection (Impact Detection)
+**Status**: COMPLETE  
+**Completed**: 2025-12-28  
 **Goal**: Detect when a throw has happened via motion detection
 
 #### Tasks:
-- [ ] Add motion detection config to `config.toml`:
-  - [ ] Downscale factor (e.g., 4)
-  - [ ] Motion threshold
-  - [ ] Gaussian blur kernel size
-  - [ ] Settled threshold
-- [ ] Implement `processing/motion_detection.py`:
-  - [ ] `MotionDetector` class
-  - [ ] Background frame maintenance
-  - [ ] Downscaled frame processing
-  - [ ] `cv2.absdiff` computation
-  - [ ] Thresholding and blur
-  - [ ] Motion detection logic
-  - [ ] Return motion boolean + bounding box
-- [ ] Integrate with `CameraManager`:
-  - [ ] Motion detection at ~10-15 FPS
-  - [ ] Combined motion signal across cameras
-  - [ ] Impact and settled detection
-- [ ] Update `main.py`:
-  - [ ] Motion detection loop
-  - [ ] Log motion events
+- [x] Add motion detection config to `config.toml`:
+  - [x] Downscale factor (4)
+  - [x] Motion threshold (25)
+  - [x] Gaussian blur kernel size (21)
+  - [x] Settled threshold (10)
+  - [x] Motion check interval (0.1s)
+- [x] Create `src/processing/` directory
+- [x] Implement `processing/motion_detection.py`:
+  - [x] `MotionDetector` class
+  - [x] Background frame maintenance per camera
+  - [x] Downscaled frame processing (4x reduction)
+  - [x] `cv2.absdiff` computation
+  - [x] Thresholding and Gaussian blur
+  - [x] Motion detection logic
+  - [x] Combined motion detection across cameras
+  - [x] Return motion boolean + motion amount
+- [x] Integrate with `CameraManager`:
+  - [x] Motion detection at ~10 FPS (0.1s intervals)
+  - [x] Combined motion signal across cameras
+  - [x] Impact and settled detection
+- [x] Update `main.py`:
+  - [x] Initialize MotionDetector
+  - [x] Background frame initialization
+  - [x] Motion detection loop
+  - [x] State machine (idle → motion_detected → settled)
+  - [x] Log motion events with per-camera details
+  - [x] Motion state overlay in dev mode
+  - [x] Continuous operation (no 10-second limit)
 
 #### Verification:
-- [ ] Test with hand movements in front of board
-- [ ] Test with actual dart throws
-- [ ] No false positives from light flicker
-- [ ] Clear motion signal on throws
+- [x] Test with hand movements in front of board
+- [x] Test with actual dart throws
+- [x] No false positives from light flicker
+- [x] Clear motion signal on throws
 
 #### Success Criteria:
-- Reliable detection of throw start
-- Reliable detection of board settled state
-- Minimal false positives
+- ✅ Reliable detection of throw start
+- ✅ Reliable detection of board settled state
+- ✅ Minimal false positives
+
+#### Results:
+- Motion detection works smoothly
+- State machine transitions correctly (idle → motion_detected → settled → idle)
+- Background updates after each settled state
+- Per-camera motion percentages logged
+- Dev mode shows motion state overlay on video feeds
 
 #### Notes:
-- Downscale heavily for performance (e.g., 200×150)
-- May need per-camera motion thresholds
+- Downscaled to 200×150 for performance (4x reduction from 800×600)
+- Motion check interval at 0.1s (~10 FPS) balances responsiveness and CPU usage
+- Combined motion detection across all cameras for reliability
 
 ---
 
 ### ⬜ Step 3.5: Exposure/Brightness Adjustment
-**Status**: NOT STARTED  
+**Status**: SKIPPED (Already handled in Step 1)  
 **Goal**: Handle bright LED ring, ensure good image quality for detection
 
-#### Tasks:
-- [ ] Add camera exposure settings to `config.toml`:
-  - [ ] Auto-exposure on/off
-  - [ ] Fixed exposure value
-  - [ ] Brightness/contrast adjustments
-- [ ] Implement exposure control in `CameraStream`:
-  - [ ] Set `CAP_PROP_AUTO_EXPOSURE` to manual
-  - [ ] Set `CAP_PROP_EXPOSURE` to fixed value
-  - [ ] Optional: brightness/contrast via `CAP_PROP_BRIGHTNESS`
-- [ ] Test and tune exposure values:
-  - [ ] Capture test frames with LED ring on
-  - [ ] Check histogram distribution
-  - [ ] Adjust until board is clearly visible without overexposure
-- [ ] Optional: Implement post-processing:
-  - [ ] CLAHE (Contrast Limited Adaptive Histogram Equalization)
-  - [ ] Only if fixed exposure insufficient
-
-#### Verification:
-- [ ] Capture frames with LED ring on
-- [ ] Board surface clearly visible
-- [ ] No overexposed regions on board
-- [ ] Dart contrast sufficient for detection
-
-#### Success Criteria:
+#### Notes:
+- Manual exposure control already implemented in Step 1
+- Exposure setting (-6) works well with LED ring
+- No additional adjustments needed at this stage
 - Consistent image brightness across frames
 - Board details visible in all lighting conditions
 - No blown-out highlights from LED ring
