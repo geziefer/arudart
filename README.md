@@ -9,4 +9,4 @@ Development is supported heavily by Amazon Kiro.
 Python based system for image capturing and processing for detecting dart scores.
 
 ## Frontend (Phase 2)
-Javascript based UI for using backend for plaing darts games locally.
+Connect extisting Flutter based App to backend for using darts as alternative input for local games.

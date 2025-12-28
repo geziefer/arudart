@@ -13,3 +13,10 @@ fps = 25
 fourcc = "MJPG"
 auto_exposure = false
 exposure = -6
+
+[motion_detection]
+downscale_factor = 4
+motion_threshold = 25
+blur_kernel = 21
+settled_threshold = 10
+motion_check_interval = 0.1  # seconds between motion checks (~10 FPS)
