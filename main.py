@@ -3,9 +3,13 @@ import argparse
 import time
 import cv2
 import numpy as np
+from datetime import datetime
+from pathlib import Path
 from src.config import load_config
 from src.camera.camera_manager import CameraManager
 from src.processing.motion_detection import MotionDetector
+from src.processing.background_model import BackgroundModel
+from src.processing.dart_detection import DartDetector
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -73,15 +77,31 @@ def main():
         settled_threshold=motion_config['settled_threshold']
     )
     
+    # Initialize background model and dart detector
+    background_model = BackgroundModel()
+    dart_config = config['dart_detection']
+    dart_detector = DartDetector(
+        diff_threshold=dart_config['diff_threshold'],
+        blur_kernel=dart_config['blur_kernel'],
+        min_dart_area=dart_config['min_dart_area'],
+        max_dart_area=dart_config['max_dart_area'],
+        min_shaft_length=dart_config['min_shaft_length'],
+        aspect_ratio_min=dart_config['aspect_ratio_min']
+    )
+    
     # FPS counters per camera
     camera_ids = camera_manager.get_camera_ids()
     fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
     
     # Motion detection state
     motion_check_interval = motion_config['motion_check_interval']
+    settled_time = motion_config.get('settled_time', 0.5)
     last_motion_check = 0
+    last_motion_time = 0
     background_initialized = False
     motion_state = "idle"  # idle, motion_detected, settled
+    throw_count = 0
+    last_logged_motion = 0  # Track last logged motion value to reduce spam
     
     try:
         logger.info("Starting motion detection...")
@@ -112,6 +132,7 @@ def main():
             if not background_initialized and len(frames) == len(camera_ids):
                 for camera_id, frame in frames.items():
                     motion_detector.update_background(camera_id, frame)
+                    background_model.update_pre_impact(camera_id, frame)
                 background_initialized = True
                 logger.info("Background initialized for all cameras")
             
@@ -119,22 +140,72 @@ def main():
             if background_initialized and current_time - last_motion_check >= motion_check_interval:
                 last_motion_check = current_time
                 
-                any_motion, per_camera_motion, max_motion = motion_detector.detect_combined_motion(frames)
+                # Use persistent change detection instead of transient motion
+                persistent_change, per_camera_motion, max_motion = motion_detector.detect_persistent_change(
+                    frames, current_time, persistence_time=0.3
+                )
                 
-                # State transitions
-                if motion_state == "idle" and any_motion:
-                    motion_state = "motion_detected"
-                    logger.info(f"Motion detected! Max motion: {max_motion:.1f}%")
+                # Only log if motion changed significantly (>0.5%) or persistent change detected
+                if abs(max_motion - last_logged_motion) > 0.5 or persistent_change:
+                    logger.info(f"Motion: {max_motion:.2f}% (threshold={motion_config['settled_threshold']}, persistent={persistent_change})")
+                    last_logged_motion = max_motion
+                
+                # Detect persistent change (dart stuck in board)
+                if motion_state == "idle" and persistent_change:
+                    motion_state = "dart_detected"
+                    logger.info(f"=== DART THROW DETECTED ===")
+                    logger.info(f"Max motion: {max_motion:.2f}%")
                     for cam_id, (detected, amount) in per_camera_motion.items():
                         if detected:
-                            logger.info(f"  Camera {cam_id}: {amount:.1f}%")
-                
-                elif motion_state == "motion_detected" and not any_motion:
-                    motion_state = "settled"
-                    logger.info("Board settled")
+                            logger.info(f"  Camera {cam_id}: {amount:.2f}%")
+                    first_camera = camera_ids[0]
+                    if background_model.has_pre_impact(first_camera) and first_camera in frames:
+                        pre_frame = background_model.get_pre_impact(first_camera)
+                        post_frame = frames[first_camera]
+                        
+                        tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
+                        
+                        if tip_x is not None:
+                            throw_count += 1
+                            logger.info(f"Dart detected! Tip at ({tip_x}, {tip_y}), confidence: {confidence:.2f}")
+                            
+                            # Save annotated images
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            throw_dir = Path(f"data/throws/throw_{throw_count:03d}_{timestamp}")
+                            throw_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # Save annotated post frame
+                            annotated = post_frame.copy()
+                            cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
+                            cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
+                            cv2.putText(annotated, f"Tip: ({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            cv2.putText(annotated, f"Conf: {confidence:.2f}", (tip_x + 15, tip_y),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            
+                            # Draw contour if available
+                            if debug_info and 'contour' in debug_info:
+                                cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                            
+                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_annotated.jpg"), annotated)
+                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_pre.jpg"), pre_frame)
+                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_post.jpg"), post_frame)
+                            
+                            # Save debug images
+                            if debug_info:
+                                if 'diff' in debug_info:
+                                    cv2.imwrite(str(throw_dir / f"cam{first_camera}_diff.jpg"), debug_info['diff'])
+                                if 'thresh' in debug_info:
+                                    cv2.imwrite(str(throw_dir / f"cam{first_camera}_thresh.jpg"), debug_info['thresh'])
+                            
+                            logger.info(f"Saved images to {throw_dir}")
+                        else:
+                            logger.warning("No dart detected in settled frame")
+                    
                     # Update background for next throw
                     for camera_id, frame in frames.items():
                         motion_detector.update_background(camera_id, frame)
+                        background_model.update_pre_impact(camera_id, frame)
                     motion_state = "idle"
             
             # Display frames in dev mode
@@ -170,12 +241,13 @@ def main():
             else:
                 time.sleep(0.01)
             
-            # Log FPS every 5 seconds
-            if current_time - start_time >= 5.0:
-                logger.info("=== FPS Report ===")
+            # Log FPS every 60 seconds
+            if current_time - start_time >= 60.0:
+                logger.info("=== Status ===")
                 for camera_id in camera_ids:
                     fps = fps_counters[camera_id].get_fps()
-                    logger.info(f"Camera {camera_id}: {fps:.2f} FPS")
+                    logger.info(f"Camera {camera_id}: {fps:.1f} FPS")
+                logger.info(f"State: {motion_state}, Throws: {throw_count}")
                 start_time = current_time
         
     except KeyboardInterrupt:

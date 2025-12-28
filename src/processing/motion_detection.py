@@ -16,6 +16,9 @@ class MotionDetector:
         # Background frames per camera
         self.background_frames = {}
         
+        # Track persistent change
+        self.persistent_change_start = {}
+        
     def update_background(self, camera_id, frame):
         """Update background frame for a camera."""
         if frame is None:
@@ -30,6 +33,7 @@ class MotionDetector:
         blurred = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
         
         self.background_frames[camera_id] = blurred
+        self.persistent_change_start[camera_id] = None
         self.logger.debug(f"Updated background for camera {camera_id}")
     
     def detect_motion(self, camera_id, frame):
@@ -78,3 +82,28 @@ class MotionDetector:
         any_motion = any(detected for detected, _ in per_camera_motion.values())
         
         return any_motion, per_camera_motion, max_motion
+    
+    def detect_persistent_change(self, camera_frames, current_time, persistence_time=0.3):
+        """
+        Detect persistent change (dart stuck in board) vs transient motion.
+        Returns: (persistent_change_detected, per_camera_motion, max_motion_amount)
+        """
+        per_camera_motion = {}
+        max_motion = 0
+        persistent_detected = False
+        
+        for camera_id, frame in camera_frames.items():
+            motion_detected, motion_amount, _ = self.detect_motion(camera_id, frame)
+            per_camera_motion[camera_id] = (motion_detected, motion_amount)
+            max_motion = max(max_motion, motion_amount)
+            
+            # Track persistent change
+            if motion_detected:
+                if self.persistent_change_start.get(camera_id) is None:
+                    self.persistent_change_start[camera_id] = current_time
+                elif current_time - self.persistent_change_start[camera_id] >= persistence_time:
+                    persistent_detected = True
+            else:
+                self.persistent_change_start[camera_id] = None
+        
+        return persistent_detected, per_camera_motion, max_motion
