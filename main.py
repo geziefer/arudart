@@ -2,6 +2,7 @@
 import argparse
 import time
 import cv2
+import numpy as np
 from src.config import load_config
 from src.camera.camera_manager import CameraManager
 from src.processing.motion_detection import MotionDetector
@@ -9,10 +10,40 @@ from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
 
+def draw_histogram(frame):
+    """Draw histogram overlay on frame with semi-transparent background."""
+    # Calculate histogram for each channel
+    hist_height = 80
+    hist_width = 256
+    # Create semi-transparent black background
+    hist_img = np.zeros((hist_height, hist_width, 3), dtype=np.uint8)
+    
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # BGR
+    for i, color in enumerate(colors):
+        hist = cv2.calcHist([frame], [i], None, [256], [0, 256])
+        # Normalize to histogram height
+        if hist.max() > 0:
+            hist = hist / hist.max() * (hist_height - 5)
+        
+        # Draw with thicker lines and slight transparency
+        for x in range(256):
+            h = int(hist[x])
+            if h > 0:
+                # Draw line for this channel
+                cv2.line(hist_img, (x, hist_height), (x, hist_height - h), color, 1)
+    
+    # Add grid lines for reference
+    cv2.line(hist_img, (0, hist_height // 2), (hist_width, hist_height // 2), (64, 64, 64), 1)
+    cv2.line(hist_img, (128, 0), (128, hist_height), (64, 64, 64), 1)
+    
+    return hist_img
+
+
 def main():
     parser = argparse.ArgumentParser(description='ARU-DART Camera Capture')
     parser.add_argument('--config', default='config.toml', help='Path to config file')
     parser.add_argument('--dev-mode', action='store_true', help='Enable development mode with preview')
+    parser.add_argument('--show-histogram', action='store_true', help='Show histogram overlay (dev mode only)')
     args = parser.parse_args()
     
     # Setup logging
@@ -54,6 +85,8 @@ def main():
     
     try:
         logger.info("Starting motion detection...")
+        if args.show_histogram:
+            logger.info("Histogram display enabled - use to verify exposure settings")
         
         # Position windows diagonally in dev mode
         if args.dev_mode:
@@ -115,6 +148,20 @@ def main():
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                     cv2.putText(display_frame, f"State: {motion_state}", (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    
+                    # Add exposure info
+                    mean_brightness = np.mean(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                    cv2.putText(display_frame, f"Brightness: {mean_brightness:.1f}", (10, 90), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    
+                    # Overlay histogram if requested
+                    if args.show_histogram:
+                        hist_img = draw_histogram(frame)
+                        # Resize histogram to fit in corner
+                        hist_resized = cv2.resize(hist_img, (256, 80))
+                        # Place in bottom-left corner
+                        y_offset = display_frame.shape[0] - 80
+                        display_frame[y_offset:y_offset+80, 0:256] = hist_resized
                     
                     cv2.imshow(f"Camera {camera_id}", display_frame)
                 

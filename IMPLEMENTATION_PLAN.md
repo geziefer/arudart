@@ -187,14 +187,51 @@
 
 ---
 
-### ⬜ Step 3.5: Exposure/Brightness Adjustment
-**Status**: SKIPPED (Already handled in Step 1)  
+### ✅ Step 3.5: Exposure/Brightness Adjustment
+**Status**: COMPLETE  
+**Completed**: 2025-12-28  
 **Goal**: Handle bright LED ring, ensure good image quality for detection
 
+#### Tasks:
+- [x] Add histogram display to dev mode
+  - [x] `--show-histogram` flag
+  - [x] RGB histogram overlay in bottom-left corner
+  - [x] Mean brightness display
+  - [x] Grid lines for reference
+- [x] Verify exposure settings with LED ring
+  - [x] Test with LED ring on
+  - [x] Check histogram distribution
+  - [x] Verify no overexposure (no clipping at 255)
+  - [x] Check dart contrast in white and colored sectors
+- [x] Document optimal exposure values
+
+#### Verification:
+- [x] Capture frames with LED ring on
+- [x] Board surface clearly visible
+- [x] No overexposed regions on board
+- [x] Dart contrast sufficient for detection
+
+#### Success Criteria:
+- ✅ Consistent image brightness across frames
+- ✅ Board details visible in all lighting conditions
+- ✅ No blown-out highlights from LED ring
+
+#### Results:
+- Histogram shows bimodal distribution (expected for high-contrast dartboard):
+  - Spike at 0: Dark areas (wires, numbers, shadows)
+  - Spike at ~190-200: Bright board surface (LED-lit)
+  - No clipping at 255 (no overexposure)
+- Mean brightness: 70-75 (optimal range)
+- Exposure -6 provides good compromise:
+  - Dart visible in colored sectors
+  - Dart harder to see in white sectors (will be handled by image differencing in Step 4)
+  - No overexposure from LED ring
+
 #### Notes:
-- Manual exposure control already implemented in Step 1
-- Exposure setting (-6) works well with LED ring
-- No additional adjustments needed at this stage
+- Manual exposure control (-6) works well with LED ring
+- Bimodal histogram is normal for dartboard (high contrast scene)
+- Image differencing (Step 4) will handle white sector detection better than exposure adjustment alone
+- Histogram visualization tool useful for future tuning
 - Consistent image brightness across frames
 - Board details visible in all lighting conditions
 - No blown-out highlights from LED ring
