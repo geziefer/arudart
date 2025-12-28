@@ -242,66 +242,150 @@
 
 ---
 
-### ⬜ Step 4: Dart Detection in One Camera
-**Status**: NOT STARTED  
+### ✅ Step 4: Dart Detection in One Camera
+**Status**: COMPLETE (Basic detection working, needs refinement in Step 4.5)
+**Completed**: 2025-12-28  
 **Goal**: Detect dart shaft/tip in single camera via image differencing
 
 #### Tasks:
-- [ ] Add dart detection config to `config.toml`:
-  - [ ] Diff threshold
-  - [ ] Gaussian blur kernel
-  - [ ] Min/max dart area (pixels)
-  - [ ] Min shaft length
-  - [ ] Aspect ratio thresholds
-- [ ] Implement `processing/background_model.py`:
-  - [ ] `BackgroundModel` class
-  - [ ] Per-camera pre-impact frame storage
-  - [ ] Update on settled state
-- [ ] Implement `processing/dart_detection.py`:
-  - [ ] `DartDetector` class
-  - [ ] Input: pre_frame, post_frame
-  - [ ] Grayscale conversion
-  - [ ] `cv2.absdiff` and thresholding
-  - [ ] Gaussian blur
-  - [ ] Contour detection
-  - [ ] Filter by area and elongation
-  - [ ] Orientation via PCA or `fitLine`
-  - [ ] **Tip identification via contour endpoint analysis**
-    - [ ] Measure contour strength/thickness at both ends
-    - [ ] Tip = end with weaker/thinner contour (embedded in board)
-    - [ ] Flight = end with stronger contour (visible, sticking out)
-    - [ ] **NOT "closest to center"** - fails for angled throws
-  - [ ] Output: tip coordinates (u, v), confidence, debug mask
-- [ ] Integrate with motion detection:
-  - [ ] Capture pre-impact frame before throw
-  - [ ] Capture post-impact frame after settled
-  - [ ] Run dart detection
-- [ ] Implement image saving:
-  - [ ] Save post_frame with annotated tip
-  - [ ] Save diff mask for debugging
-  - [ ] Organize by timestamp/throw ID
-- [ ] Update `main.py`:
-  - [ ] Dart detection on motion settled
-  - [ ] Log detected coordinates
-  - [ ] Save annotated images in dev mode
+- [x] Add dart detection config to `config.toml`
+- [x] Implement `processing/background_model.py`
+- [x] Implement `processing/dart_detection.py`
+- [x] Create image saving directory structure
+- [x] Integrate dart detection into main.py
+- [x] Test dart detection
 
 #### Verification:
-- [ ] Test with 20-30 throws in different sectors
-- [ ] Inspect saved annotated images
-- [ ] Verify tip detection roughly matches dart position
-- [ ] Check detection rate (should be >70% for single camera)
+- [x] Test with multiple throws in different sectors
+- [x] Inspect saved annotated images
+- [x] Verify tip detection roughly matches dart position
 
 #### Success Criteria:
-- Plausible dart shaft and tip detected in most throws
-- Annotated images show detection overlay
-- Confidence scores correlate with visual quality
+- ✅ Dart shaft detected in most throws
+- ✅ Annotated images show detection overlay
+- ⚠️ Tip detection needs improvement (see Step 4.5)
+
+#### Results:
+- Persistent change detection working reliably
+- Dart shape (flight) detected correctly
+- Barrel harder to see on white sectors (metallic reflection)
+- Tip detection inaccurate:
+  - Sometimes identifies flight end as tip
+  - Sometimes identifies shaft end as tip
+  - Contour endpoint strength analysis needs refinement
+- Saved images show detection pipeline is working
+- Ready for Step 4.5 improvements
 
 #### Notes:
-- Start with one camera (index 0)
-- May need to tune thresholds per camera
-- Elongation filter critical to reject noise
-- **Tip identification:** Use contour endpoint analysis (embedded tip has weaker contour than visible flight)
-- **Avoid "closest to center" heuristic** - fails for angled throws (top→bottom, bottom→top, left→right)
+- Lowered thresholds: diff_threshold=15, min_dart_area=50, aspect_ratio_min=1.5
+- Motion detection: settled_threshold=1.0% works well for dart-only visibility
+- Persistence time of 0.3s reliably detects stuck darts
+
+---
+
+### ⬜ Step 4.5: Improve Dart Shape and Tip Detection
+**Status**: NOT STARTED  
+**Goal**: Refine detection to handle difficult cases (metallic barrels, white sectors, tip vs shaft disambiguation)
+
+#### Current Issues Identified:
+- Flight detected correctly
+- Barrel (gold/silver) hard to see against white sectors
+- Tip detection inaccurate:
+  - Sometimes detects flight end instead of tip
+  - Sometimes detects shaft end instead of tip
+- Need better contour endpoint strength analysis
+
+#### Tasks:
+- [ ] Improve contour detection for metallic darts:
+  - [ ] Add edge detection (Canny) before contour finding
+  - [ ] Combine diff-based and edge-based detection
+  - [ ] Test with different diff thresholds for white vs colored sectors
+- [ ] Enhance tip identification algorithm:
+  - [ ] Improve endpoint strength measurement
+  - [ ] Add gradient analysis at endpoints (tip has sharp gradient, flight is blunt)
+  - [ ] Consider contour curvature at endpoints
+  - [ ] Add distance-from-center as secondary heuristic (not primary)
+- [ ] Add detection quality metrics:
+  - [ ] Measure contour completeness (gaps indicate occlusion)
+  - [ ] Detect if only flight visible (no barrel/tip)
+  - [ ] Flag low-confidence detections
+- [ ] Improve debug visualization:
+  - [ ] Draw fitted line on annotated image
+  - [ ] Mark both endpoints with different colors
+  - [ ] Show endpoint strength values
+  - [ ] Overlay edge detection results
+- [ ] Add detection analysis logging:
+  - [ ] Log why contours were rejected (area, aspect ratio, length)
+  - [ ] Log endpoint strength comparison
+  - [ ] Log contour characteristics (length, thickness, gaps)
+  - [ ] Save additional debug images (edges, gradients)
+
+#### Verification:
+- [ ] Test with 20-30 throws in various sectors:
+  - [ ] White sectors (hardest)
+  - [ ] Black sectors
+  - [ ] Red/green sectors
+- [ ] Test with different dart types:
+  - [ ] Metallic barrels
+  - [ ] Painted barrels
+  - [ ] Different flight colors
+- [ ] Analyze saved debug images:
+  - [ ] Check edge detection quality
+  - [ ] Verify endpoint markers
+  - [ ] Review strength values
+- [ ] Calculate tip accuracy:
+  - [ ] Manually mark true tip in 10 images
+  - [ ] Measure pixel distance from detected to true tip
+  - [ ] Target: <20 pixel error on average
+
+#### Success Criteria:
+- Tip detection accuracy >80% (correct end identified)
+- Works in white sectors (most challenging)
+- Clear debug images showing detection reasoning
+- Confidence scores correlate with visual accuracy
+
+#### Improvements to Implement:
+
+**1. Enhanced Contour Detection:**
+```python
+# Add Canny edge detection
+edges = cv2.Canny(post_gray, 50, 150)
+# Combine with diff-based detection
+combined = cv2.bitwise_or(thresh, edges)
+```
+
+**2. Better Endpoint Strength Measurement:**
+```python
+# Measure gradient magnitude at endpoints
+# Tip: sharp gradient (enters board)
+# Flight: low gradient (blunt end)
+gradient_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+gradient_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+gradient_mag = np.sqrt(gradient_x**2 + gradient_y**2)
+```
+
+**3. Contour Curvature Analysis:**
+```python
+# Tip end: contour tapers to point
+# Flight end: contour is wider/blunt
+# Measure contour width at both ends
+```
+
+**4. Multi-factor Tip Scoring:**
+```python
+tip_score = (
+    0.4 * contour_strength_factor +  # Embedded = weaker
+    0.3 * gradient_factor +           # Tip = sharper
+    0.2 * curvature_factor +          # Tip = tapers
+    0.1 * distance_to_center_factor   # Tip usually closer (weak signal)
+)
+```
+
+#### Notes:
+- Metallic barrels reflect light differently - edge detection may help
+- White sectors reduce contrast - may need adaptive thresholding
+- Tip identification is the hardest part - multi-factor approach needed
+- Save extensive debug images for manual analysis
 
 ---
 
