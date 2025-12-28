@@ -266,7 +266,11 @@
   - [ ] Contour detection
   - [ ] Filter by area and elongation
   - [ ] Orientation via PCA or `fitLine`
-  - [ ] Tip identification (closer to board center)
+  - [ ] **Tip identification via contour endpoint analysis**
+    - [ ] Measure contour strength/thickness at both ends
+    - [ ] Tip = end with weaker/thinner contour (embedded in board)
+    - [ ] Flight = end with stronger contour (visible, sticking out)
+    - [ ] **NOT "closest to center"** - fails for angled throws
   - [ ] Output: tip coordinates (u, v), confidence, debug mask
 - [ ] Integrate with motion detection:
   - [ ] Capture pre-impact frame before throw
@@ -296,6 +300,8 @@
 - Start with one camera (index 0)
 - May need to tune thresholds per camera
 - Elongation filter critical to reject noise
+- **Tip identification:** Use contour endpoint analysis (embedded tip has weaker contour than visible flight)
+- **Avoid "closest to center" heuristic** - fails for angled throws (top→bottom, bottom→top, left→right)
 
 ---
 
