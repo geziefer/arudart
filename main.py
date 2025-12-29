@@ -48,6 +48,7 @@ def main():
     parser.add_argument('--config', default='config.toml', help='Path to config file')
     parser.add_argument('--dev-mode', action='store_true', help='Enable development mode with preview')
     parser.add_argument('--show-histogram', action='store_true', help='Show histogram overlay (dev mode only)')
+    parser.add_argument('--manual-test', action='store_true', help='Enable manual testing mode (pause/place dart/detect)')
     args = parser.parse_args()
     
     # Setup logging
@@ -104,6 +105,7 @@ def main():
     motion_state = "idle"  # idle, motion_detected, settled
     throw_count = 0
     last_logged_motion = 0  # Track last logged motion value to reduce spam
+    paused = False  # Pause/play for manual dart placement testing
     
     # Create session folder for this run
     session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -117,6 +119,8 @@ def main():
     session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
     session_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Session folder: {session_dir}")
+    if args.manual_test:
+        logger.info("=== MANUAL TESTING MODE: Press 'p' to pause/place dart, 'p' again to detect ===")
     
     try:
         logger.info("Starting motion detection...")
@@ -125,7 +129,9 @@ def main():
         
         # Position windows diagonally in dev mode
         if args.dev_mode:
-            for i, camera_id in enumerate(camera_ids):
+            # In manual test mode, only show camera 0
+            cameras_to_show = [0] if args.manual_test else camera_ids
+            for i, camera_id in enumerate(cameras_to_show):
                 cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
                 cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
                 cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
@@ -150,8 +156,8 @@ def main():
                 logger.info("=== Ready to initialize background - press 'r' when board is clear ===")
                 background_initialized = "waiting"  # Flag to show message only once
             
-            # Check motion at intervals
-            if background_initialized == True and current_time - last_motion_check >= motion_check_interval:
+            # Check motion at intervals (only when not paused)
+            if not paused and background_initialized == True and current_time - last_motion_check >= motion_check_interval:
                 last_motion_check = current_time
                 
                 # Use persistent change detection instead of transient motion
@@ -169,19 +175,21 @@ def main():
                     logger.info(f"Motion: {max_motion:.2f}% (threshold={motion_config['settled_threshold']}, persistent={persistent_change})")
                     last_logged_motion = max_motion
                 
-                # Detect persistent change (dart stuck in board)
-                if motion_state == "idle" and persistent_change:
-                    # Check cooldown to prevent rapid re-detection
-                    if current_time - last_detection_time < detection_cooldown:
+                # Detect persistent change (dart stuck in board) OR manual trigger
+                if (motion_state == "idle" and persistent_change) or motion_state == "dart_detected":
+                    # Check cooldown to prevent rapid re-detection (skip for manual trigger)
+                    if motion_state == "idle" and current_time - last_detection_time < detection_cooldown:
                         continue  # Skip this detection, too soon after last one
                     
-                    motion_state = "dart_detected"
-                    last_detection_time = current_time
-                    logger.info(f"=== DART THROW DETECTED ===")
-                    logger.info(f"Max motion: {max_motion:.2f}%")
-                    for cam_id, (detected, amount) in per_camera_motion.items():
-                        if detected:
-                            logger.info(f"  Camera {cam_id}: {amount:.2f}%")
+                    if motion_state == "idle":  # Only log and update state if coming from idle
+                        motion_state = "dart_detected"
+                        last_detection_time = current_time
+                        logger.info(f"=== DART THROW DETECTED ===")
+                        logger.info(f"Max motion: {max_motion:.2f}%")
+                        for cam_id, (detected, amount) in per_camera_motion.items():
+                            if detected:
+                                logger.info(f"  Camera {cam_id}: {amount:.2f}%")
+                    
                     first_camera = camera_ids[0]
                     if background_model.has_pre_impact(first_camera) and first_camera in frames:
                         pre_frame = background_model.get_pre_impact(first_camera)
@@ -244,14 +252,24 @@ def main():
             
             # Display frames in dev mode
             if args.dev_mode and frames:
-                for camera_id, frame in frames.items():
+                # In manual test mode, only show camera 0; otherwise show all cameras
+                cameras_to_show = [camera_ids[0]] if args.manual_test else camera_ids
+                
+                for camera_id in cameras_to_show:
+                    if camera_id not in frames:
+                        continue
+                    
+                    frame = frames[camera_id]
                     display_frame = frame.copy()
                     fps = fps_counters[camera_id].get_fps()
                     
                     # Add FPS and motion state overlay
                     cv2.putText(display_frame, f"Camera {camera_id} - FPS: {fps:.1f}", (10, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.putText(display_frame, f"State: {motion_state}", (10, 60), 
+                    state_text = f"State: {motion_state}"
+                    if args.manual_test and paused:
+                        state_text += " [PAUSED]"
+                    cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     
                     # Add exposure info
@@ -295,6 +313,26 @@ def main():
                     background_initialized = True
                     last_detection_time = 0  # Reset cooldown
                     logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
+                elif key == ord('p'):
+                    # Toggle pause for manual dart placement (only in manual test mode)
+                    if not args.manual_test:
+                        continue
+                    
+                    if not paused:
+                        # Entering pause mode - capture current state as pre-impact
+                        paused = True
+                        for camera_id in camera_ids:
+                            frame = camera_manager.get_latest_frame(camera_id)
+                            if frame is not None:
+                                background_model.update_pre_impact(camera_id, frame)
+                        logger.info("=== PAUSED - Place dart manually, then press 'p' to detect ===")
+                    else:
+                        # Exiting pause mode - trigger detection
+                        paused = False
+                        logger.info("=== RESUMING - Triggering detection ===")
+                        # Manually trigger detection
+                        motion_state = "dart_detected"
+                        last_detection_time = current_time
             else:
                 time.sleep(0.01)
             

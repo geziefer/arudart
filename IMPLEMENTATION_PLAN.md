@@ -409,6 +409,55 @@ tip_score = (
 
 ---
 
+### ✅ Step 4.6: Manual Testing Mode
+**Status**: COMPLETE  
+**Completed**: 2025-12-29  
+**Goal**: Add controlled testing environment for precise dart placement and detection analysis
+
+#### Tasks:
+- [x] Add `--manual-test` command line flag
+- [x] Implement pause/play mechanism with 'p' key
+- [x] Show only camera 0 window in manual test mode
+- [x] Capture pre-impact frame on pause
+- [x] Trigger detection on resume
+- [x] Add session-based folder structure
+- [x] Display pause state in video overlay
+
+#### Features:
+- **Session folders:** `Session_XXX_YYYY-MM-DD_HH-MM-SS/`
+- **Throw folders:** `Throw_XXX_HH-MM-SS/` within session
+- **Pause/Play:** Press 'p' to pause, place dart, press 'p' to detect
+- **Single camera view:** Only show camera 0 (detection camera)
+- **Controlled testing:** Precise dart placement for specific test cases
+
+#### Usage:
+```bash
+# Normal mode (automatic detection, all cameras shown)
+python main.py --dev-mode
+
+# Manual testing mode (pause/play, single camera)
+python main.py --dev-mode --manual-test
+
+# With histogram
+python main.py --dev-mode --manual-test --show-histogram
+```
+
+#### Workflow:
+1. Press 'r' to capture clean board
+2. Press 'p' to pause (place dart manually)
+3. Press 'p' again to trigger detection
+4. Remove dart, press 'r' to reset
+5. Repeat
+
+#### Benefits:
+- Test specific dart positions/angles
+- Test multiple dart constellations
+- Repeatable test cases
+- No throwing skill required
+- Permanent feature for future debugging
+
+---
+
 ### ⬜ Step 5: Extend Dart Detection to 3 Cameras
 **Status**: NOT STARTED  
 **Goal**: Get per-camera tip detections for each throw
