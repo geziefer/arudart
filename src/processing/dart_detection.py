@@ -38,8 +38,14 @@ class DartDetector:
         if self.blur_kernel > 0:
             diff = cv2.GaussianBlur(diff, (self.blur_kernel, self.blur_kernel), 0)
         
+        # Add edge detection to catch metallic darts (low contrast in diff)
+        edges = cv2.Canny(post_gray, 50, 150)
+        
         # Threshold
         _, thresh = cv2.threshold(diff, self.diff_threshold, 255, cv2.THRESH_BINARY)
+        
+        # Combine diff-based and edge-based detection
+        thresh = cv2.bitwise_or(thresh, edges)
         
         # Morphological operations to remove small noise
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
@@ -144,9 +150,9 @@ class DartDetector:
     
     def _find_tip(self, contour, thresh_image, image_shape):
         """
-        Find dart tip using contour endpoint analysis.
-        Tip = end with weaker contour (embedded in board)
-        Flight = end with stronger contour (visible, sticking out)
+        Find dart tip using contour taper analysis.
+        Tip = narrow end (tapers to point)
+        Flight = wide end (bulky)
         """
         # Fit line to contour
         [vx, vy, x0, y0] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -169,49 +175,47 @@ class DartDetector:
         end1 = (int(x0 + t_min * vx), int(y0 + t_min * vy))
         end2 = (int(x0 + t_max * vx), int(y0 + t_max * vy))
         
-        # Measure contour strength at both ends
-        # Tip (embedded) has weaker/thinner contour
-        # Flight (visible) has stronger contour
-        strength1 = self._measure_endpoint_strength(end1, thresh_image)
-        strength2 = self._measure_endpoint_strength(end2, thresh_image)
+        # Measure contour width at both ends (taper analysis)
+        # Tip is narrow, flight is wide
+        width1 = self._measure_contour_width(contour_points, end1)
+        width2 = self._measure_contour_width(contour_points, end2)
         
-        # Tip is the end with LOWER strength
-        if strength1 < strength2:
+        # Tip is the narrower end
+        if width1 < width2:
             tip = end1
-            confidence = (strength2 - strength1) / max(strength2, 1)
+            confidence = (width2 - width1) / max(width2, 1)
         else:
             tip = end2
-            confidence = (strength1 - strength2) / max(strength1, 1)
+            confidence = (width1 - width2) / max(width1, 1)
         
         # Clamp confidence to [0, 1]
         confidence = min(max(confidence, 0.0), 1.0)
         
-        self.logger.debug(f"Tip at {tip}, confidence: {confidence:.2f}, strengths: {strength1:.1f}, {strength2:.1f}")
+        self.logger.debug(f"Tip at {tip}, confidence: {confidence:.2f}, widths: {width1:.1f}, {width2:.1f}")
         
         return tip[0], tip[1], confidence
     
-    def _measure_endpoint_strength(self, point, thresh_image):
+    def _measure_contour_width(self, contour_points, endpoint):
         """
-        Measure contour strength around an endpoint.
-        Higher value = stronger/more visible (flight end)
-        Lower value = weaker/embedded (tip end)
+        Measure contour width near an endpoint.
+        Returns average distance of nearby contour points from the endpoint.
         """
-        x, y = point
-        h, w = thresh_image.shape
+        endpoint = np.array(endpoint)
         
-        # Sample region around endpoint
-        radius = 10
-        x1 = max(0, x - radius)
-        x2 = min(w, x + radius)
-        y1 = max(0, y - radius)
-        y2 = min(h, y + radius)
+        # Find points within 20 pixels of endpoint
+        distances = np.linalg.norm(contour_points - endpoint, axis=1)
+        nearby_mask = distances < 20
         
-        if x2 <= x1 or y2 <= y1:
+        if not np.any(nearby_mask):
             return 0.0
         
-        region = thresh_image[y1:y2, x1:x2]
+        nearby_points = contour_points[nearby_mask]
         
-        # Strength = sum of white pixels (contour intensity)
-        strength = np.sum(region > 0)
+        # Measure spread of nearby points (width)
+        if len(nearby_points) < 2:
+            return 0.0
         
-        return float(strength)
+        # Use standard deviation as width measure
+        width = np.std(nearby_points, axis=0).mean()
+        
+        return float(width)

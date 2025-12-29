@@ -12,7 +12,7 @@ height = 600
 fps = 25
 fourcc = "MJPG"
 auto_exposure = false
-exposure = -6  # Optimal for LED ring: brightness 70-75, no overexposure, good contrast
+exposure = -7  # Lowered from -6 for better contrast with metallic darts
 
 [motion_detection]
 downscale_factor = 4

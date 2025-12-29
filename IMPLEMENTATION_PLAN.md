@@ -243,8 +243,8 @@
 ---
 
 ### ✅ Step 4: Dart Detection in One Camera
-**Status**: COMPLETE (Basic detection working, needs refinement in Step 4.5)
-**Completed**: 2025-12-28  
+**Status**: COMPLETE (Basic detection working, improvements ongoing)
+**Completed**: 2025-12-29  
 **Goal**: Detect dart shaft/tip in single camera via image differencing
 
 #### Tasks:
@@ -254,32 +254,52 @@
 - [x] Create image saving directory structure
 - [x] Integrate dart detection into main.py
 - [x] Test dart detection
+- [x] **Improvements implemented:**
+  - [x] Disable camera auto-adjustments (WB, focus, gain)
+  - [x] Add morphological noise removal (open/close operations)
+  - [x] Add spatial mask (exclude outer numbers, include all scoring area)
+  - [x] Add enhanced shape filters (circularity, solidity)
+  - [x] Lower exposure to -7 for better metallic dart contrast
+  - [x] Add Canny edge detection for metallic darts
+  - [x] Implement contour taper analysis for tip identification
 
 #### Verification:
 - [x] Test with multiple throws in different sectors
 - [x] Inspect saved annotated images
-- [x] Verify tip detection roughly matches dart position
+- [x] Verify tip detection accuracy
 
 #### Success Criteria:
-- ✅ Dart shaft detected in most throws
+- ✅ Dart shaft detected in most throws (9/13 in latest test)
 - ✅ Annotated images show detection overlay
-- ⚠️ Tip detection needs improvement (see Step 4.5)
+- ⚠️ Tip detection improving but needs refinement
 
 #### Results:
-- Persistent change detection working reliably
-- Dart shape (flight) detected correctly
-- Barrel harder to see on white sectors (metallic reflection)
-- Tip detection inaccurate:
-  - Sometimes identifies flight end as tip
-  - Sometimes identifies shaft end as tip
-  - Contour endpoint strength analysis needs refinement
-- Saved images show detection pipeline is working
-- Ready for Step 4.5 improvements
+- **Persistent change detection:** Working reliably
+- **Shape detection:** Much improved with morphological ops and spatial mask
+- **Metallic dart detection:** Improved with lower exposure + edge detection
+- **Tip identification:** Contour taper analysis implemented
+- **Known limitations:**
+  - Metallic barrel/tip still challenging in white sectors
+  - Partial occlusion by previous darts (expected, will be solved with 3 cameras)
+  - Tip identification ~60% accurate (needs multi-factor approach)
+
+#### Configuration Changes:
+- `exposure = -7` (lowered from -6)
+- `diff_threshold = 15`
+- `min_dart_area = 50`
+- `max_dart_area = 10000`
+- `min_shaft_length = 15`
+- `aspect_ratio_min = 1.2`
+- `circularity < 0.7`
+- `solidity > 0.5`
 
 #### Notes:
-- Lowered thresholds: diff_threshold=15, min_dart_area=50, aspect_ratio_min=1.5
-- Motion detection: settled_threshold=1.0% works well for dart-only visibility
-- Persistence time of 0.3s reliably detects stuck darts
+- Camera auto-adjustments disabled: AUTO_WB=0, AUTOFOCUS=0, GAIN=0
+- Morphological operations clean up noise effectively
+- Spatial mask excludes outer 15% (numbers) but includes all scoring area
+- Edge detection helps with metallic darts
+- Contour taper analysis: tip = narrow end, flight = wide end
+- Always save images even when detection fails (for analysis)
 
 ---
 
