@@ -105,6 +105,19 @@ def main():
     throw_count = 0
     last_logged_motion = 0  # Track last logged motion value to reduce spam
     
+    # Create session folder for this run
+    session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Find next session number
+    throws_dir = Path("data/throws")
+    throws_dir.mkdir(parents=True, exist_ok=True)
+    existing_sessions = list(throws_dir.glob("Session_*"))
+    session_number = len(existing_sessions) + 1
+    
+    session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Session folder: {session_dir}")
+    
     try:
         logger.info("Starting motion detection...")
         if args.show_histogram:
@@ -178,8 +191,8 @@ def main():
                         
                         # Always save images (even if detection failed)
                         throw_count += 1
-                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        throw_dir = Path(f"data/throws/{timestamp}_throw_{throw_count:03d}")
+                        throw_timestamp = datetime.now().strftime("%H-%M-%S")
+                        throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
                         throw_dir.mkdir(parents=True, exist_ok=True)
                         
                         if tip_x is not None:
