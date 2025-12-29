@@ -98,6 +98,8 @@ def main():
     settled_time = motion_config.get('settled_time', 0.5)
     last_motion_check = 0
     last_motion_time = 0
+    last_detection_time = 0  # Track last dart detection to prevent rapid re-detection
+    detection_cooldown = 2.0  # Seconds to wait before detecting next dart
     background_initialized = False
     motion_state = "idle"  # idle, motion_detected, settled
     throw_count = 0
@@ -144,6 +146,11 @@ def main():
                     frames, current_time, persistence_time=0.3
                 )
                 
+                # Slowly adapt background when idle AND no motion detected (compensates for lighting/camera drift)
+                if motion_state == "idle" and not persistent_change and max_motion < 0.5:
+                    for camera_id, frame in frames.items():
+                        motion_detector.update_background(camera_id, frame, learning_rate=0.01)
+                
                 # Only log if motion changed significantly (>0.5%) or persistent change detected
                 if abs(max_motion - last_logged_motion) > 0.5 or persistent_change:
                     logger.info(f"Motion: {max_motion:.2f}% (threshold={motion_config['settled_threshold']}, persistent={persistent_change})")
@@ -151,7 +158,12 @@ def main():
                 
                 # Detect persistent change (dart stuck in board)
                 if motion_state == "idle" and persistent_change:
+                    # Check cooldown to prevent rapid re-detection
+                    if current_time - last_detection_time < detection_cooldown:
+                        continue  # Skip this detection, too soon after last one
+                    
                     motion_state = "dart_detected"
+                    last_detection_time = current_time
                     logger.info(f"=== DART THROW DETECTED ===")
                     logger.info(f"Max motion: {max_motion:.2f}%")
                     for cam_id, (detected, amount) in per_camera_motion.items():
@@ -164,16 +176,16 @@ def main():
                         
                         tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
                         
+                        # Always save images (even if detection failed)
+                        throw_count += 1
+                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                        throw_dir = Path(f"data/throws/{timestamp}_throw_{throw_count:03d}")
+                        throw_dir.mkdir(parents=True, exist_ok=True)
+                        
                         if tip_x is not None:
-                            throw_count += 1
                             logger.info(f"Dart detected! Tip at ({tip_x}, {tip_y}), confidence: {confidence:.2f}")
                             
-                            # Save annotated images
-                            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                            throw_dir = Path(f"data/throws/{timestamp}_throw_{throw_count:03d}")
-                            throw_dir.mkdir(parents=True, exist_ok=True)
-                            
-                            # Save annotated post frame
+                            # Save annotated post frame with detection
                             annotated = post_frame.copy()
                             cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
                             cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
@@ -187,22 +199,34 @@ def main():
                                 cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
                             
                             cv2.imwrite(str(throw_dir / f"cam{first_camera}_annotated.jpg"), annotated)
-                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_pre.jpg"), pre_frame)
-                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_post.jpg"), post_frame)
-                            
-                            # Save debug images
-                            if debug_info:
-                                if 'diff' in debug_info:
-                                    cv2.imwrite(str(throw_dir / f"cam{first_camera}_diff.jpg"), debug_info['diff'])
-                                if 'thresh' in debug_info:
-                                    cv2.imwrite(str(throw_dir / f"cam{first_camera}_thresh.jpg"), debug_info['thresh'])
-                            
-                            logger.info(f"Saved images to {throw_dir}")
                         else:
-                            logger.warning("No dart detected in settled frame")
+                            logger.warning("No dart detected in settled frame - saving images for analysis")
+                            # Save post frame without annotation
+                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_annotated.jpg"), post_frame)
+                        
+                        # Always save pre/post and debug images
+                        cv2.imwrite(str(throw_dir / f"cam{first_camera}_pre.jpg"), pre_frame)
+                        cv2.imwrite(str(throw_dir / f"cam{first_camera}_post.jpg"), post_frame)
+                        
+                        # Save debug images
+                        if debug_info:
+                            if 'diff' in debug_info:
+                                cv2.imwrite(str(throw_dir / f"cam{first_camera}_diff.jpg"), debug_info['diff'])
+                            if 'thresh' in debug_info:
+                                cv2.imwrite(str(throw_dir / f"cam{first_camera}_thresh.jpg"), debug_info['thresh'])
+                        
+                        logger.info(f"Saved images to {throw_dir}")
                     
-                    # DON'T update background here - dart is still in board!
-                    # Background will be updated manually with 'r' key after darts removed
+                    # Update background to include this dart for next throw
+                    # This way, next dart will only show the NEW dart, not previous ones
+                    for camera_id, frame in frames.items():
+                        motion_detector.update_background(camera_id, frame)
+                        background_model.update_pre_impact(camera_id, frame)
+                    
+                    # Reset persistent change tracker to prevent repeated detections
+                    for camera_id in camera_ids:
+                        motion_detector.persistent_change_start[camera_id] = None
+                    
                     motion_state = "idle"
             
             # Display frames in dev mode
@@ -233,14 +257,30 @@ def main():
                     
                     cv2.imshow(f"Camera {camera_id}", display_frame)
                 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                # Check for keypresses (only call waitKey once)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
                     break
-                elif cv2.waitKey(1) & 0xFF == ord('r'):
+                elif key == ord('r'):
                     # Manual background reset - press 'r' after removing darts or at startup
-                    for camera_id, frame in frames.items():
+                    # Wait for camera to fully stabilize before capturing
+                    logger.info("Stabilizing camera for 2 seconds...")
+                    time.sleep(2.0)
+                    
+                    # Capture single stable frame
+                    stable_frames = {}
+                    for camera_id in camera_ids:
+                        frame = camera_manager.get_latest_frame(camera_id)
+                        if frame is not None:
+                            stable_frames[camera_id] = frame
+                    
+                    # Update background
+                    for camera_id, frame in stable_frames.items():
                         motion_detector.update_background(camera_id, frame)
                         background_model.update_pre_impact(camera_id, frame)
+                    
                     background_initialized = True
+                    last_detection_time = 0  # Reset cooldown
                     logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
             else:
                 time.sleep(0.01)

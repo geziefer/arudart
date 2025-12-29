@@ -15,6 +15,9 @@ class DartDetector:
         self.min_shaft_length = min_shaft_length
         self.aspect_ratio_min = aspect_ratio_min
         self.logger = logging.getLogger('arudart.dart_detector')
+        
+        # Spatial mask to exclude board features (created on first detection)
+        self.board_mask = None
     
     def detect(self, pre_frame, post_frame):
         """
@@ -37,6 +40,26 @@ class DartDetector:
         
         # Threshold
         _, thresh = cv2.threshold(diff, self.diff_threshold, 255, cv2.THRESH_BINARY)
+        
+        # Morphological operations to remove small noise
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)  # Remove small white noise
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)  # Fill small holes
+        
+        # Create spatial mask on first use (exclude outer numbers only)
+        if self.board_mask is None:
+            h, w = thresh.shape
+            center = (w // 2, h // 2)
+            # Create mask: white = valid area, black = excluded
+            self.board_mask = np.zeros((h, w), dtype=np.uint8)
+            # Valid area: inside the double ring (approximately 85% of image radius)
+            valid_radius = int(min(w, h) * 0.42)  # 84% of half-width
+            cv2.circle(self.board_mask, center, valid_radius, 255, -1)
+            # Bull is included (no inner exclusion)
+            self.logger.info(f"Created board mask: valid_radius={valid_radius} (excludes outer numbers only)")
+        
+        # Apply spatial mask to exclude board features
+        thresh = cv2.bitwise_and(thresh, thresh, mask=self.board_mask)
         
         # Find contours
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -65,13 +88,38 @@ class DartDetector:
             if max(h, w) < self.min_shaft_length:
                 continue
             
+            # Enhanced filters: circularity and solidity
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue
+            
+            # Circularity: 1.0 = perfect circle, 0.0 = line
+            # Dart should be elongated (low circularity)
+            circularity = 4 * np.pi * area / (perimeter * perimeter)
+            if circularity > 0.7:  # Relaxed from 0.5 - allow more circular shapes
+                self.logger.debug(f"Rejected: too circular ({circularity:.2f})")
+                continue
+            
+            # Solidity: ratio of contour area to convex hull area
+            # Dart should be solid (high solidity), wires are hollow (low solidity)
+            hull = cv2.convexHull(contour)
+            hull_area = cv2.contourArea(hull)
+            if hull_area == 0:
+                continue
+            solidity = area / hull_area
+            if solidity < 0.5:  # Relaxed from 0.7 - allow more irregular shapes
+                self.logger.debug(f"Rejected: too hollow (solidity={solidity:.2f})")
+                continue
+            
             dart_candidates.append({
                 'contour': contour,
                 'area': area,
                 'bbox': (x, y, w, h),
-                'aspect_ratio': aspect_ratio
+                'aspect_ratio': aspect_ratio,
+                'circularity': circularity,
+                'solidity': solidity
             })
-            self.logger.info(f"Dart candidate: area={area:.0f}, bbox={w}x{h}, aspect={aspect_ratio:.1f}")
+            self.logger.info(f"Dart candidate: area={area:.0f}, bbox={w}x{h}, aspect={aspect_ratio:.1f}, circ={circularity:.2f}, solid={solidity:.2f}")
         
         if not dart_candidates:
             self.logger.info(f"No dart-like contours found (checked {len(contours)} contours)")

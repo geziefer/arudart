@@ -33,6 +33,18 @@ class CameraStream:
             self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # Manual mode
             self.cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
         
+        # Disable auto white balance
+        self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)  # 0 = off
+        self.cap.set(cv2.CAP_PROP_WB_TEMPERATURE, 4000)  # Fixed color temperature
+        
+        # Disable auto focus (if supported)
+        self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # 0 = off
+        
+        # Disable auto gain
+        self.cap.set(cv2.CAP_PROP_GAIN, 0)  # Fixed gain
+        
+        self.logger.info(f"Camera {device_index}: Disabled auto-adjustments (WB, focus, gain)")
+        
         # Log actual settings
         actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))

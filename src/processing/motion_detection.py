@@ -19,8 +19,11 @@ class MotionDetector:
         # Track persistent change
         self.persistent_change_start = {}
         
-    def update_background(self, camera_id, frame):
-        """Update background frame for a camera."""
+    def update_background(self, camera_id, frame, learning_rate=1.0):
+        """
+        Update background frame for a camera.
+        learning_rate: 1.0 = full replace, 0.1 = slow adaptation
+        """
         if frame is None:
             return
         
@@ -32,9 +35,19 @@ class MotionDetector:
         # Apply Gaussian blur
         blurred = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
         
-        self.background_frames[camera_id] = blurred
+        if camera_id not in self.background_frames or learning_rate == 1.0:
+            # First time or full replace
+            self.background_frames[camera_id] = blurred
+        else:
+            # Adaptive update: blend old and new
+            old_bg = self.background_frames[camera_id].astype(np.float32)
+            new_bg = blurred.astype(np.float32)
+            self.background_frames[camera_id] = (
+                (1 - learning_rate) * old_bg + learning_rate * new_bg
+            ).astype(np.uint8)
+        
         self.persistent_change_start[camera_id] = None
-        self.logger.debug(f"Updated background for camera {camera_id}")
+        self.logger.debug(f"Updated background for camera {camera_id} (learning_rate={learning_rate})")
     
     def detect_motion(self, camera_id, frame):
         """
