@@ -47,10 +47,13 @@ class DartDetector:
         # Combine diff-based and edge-based detection
         thresh = cv2.bitwise_or(thresh, edges)
         
-        # Morphological operations to remove small noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)  # Remove small white noise
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)  # Fill small holes
+        # Morphological operations to remove small noise and bridge gaps
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)  # Remove small white noise
+        
+        # Use larger kernel for closing to bridge gaps between shaft and tip
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill gaps and holes
         
         # Create spatial mask on first use (exclude outer numbers only)
         if self.board_mask is None:
