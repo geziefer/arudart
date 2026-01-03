@@ -632,6 +632,59 @@ python main.py --dev-mode --manual-test --show-histogram
 
 ---
 
+### ⬜ Step 7.5: Human Feedback & Learning System
+**Status**: NOT STARTED  
+**Goal**: Collect user feedback on detected scores to build verified dataset and improve accuracy
+
+**Note**: Implement after Steps 5-7 are complete (full 3-camera system with score mapping)
+
+#### Tasks:
+- [ ] Add feedback mode to `main.py`:
+  - [ ] `--feedback-mode` command line flag
+  - [ ] After each detection, prompt user for confirmation
+  - [ ] Display detected score with confidence
+  - [ ] User input: 'y' (correct), 'n' (wrong), 'c' (correct with manual entry)
+  - [ ] If wrong: prompt for actual score
+  - [ ] Store feedback with detection data
+- [ ] Implement feedback storage:
+  - [ ] Create `data/feedback/` directory structure
+  - [ ] Save per throw:
+    - [ ] Metadata JSON (detected score, actual score, confidence, timestamp)
+    - [ ] Images from all 3 cameras (pre, post, annotated)
+    - [ ] Detection coordinates from each camera
+  - [ ] Organize by: correct vs incorrect detections
+- [ ] Implement feedback analysis tools:
+  - [ ] Script to analyze accuracy per sector/ring
+  - [ ] Identify systematic failure patterns
+  - [ ] Generate accuracy heatmap of dartboard
+  - [ ] Export statistics (overall accuracy, per-region accuracy)
+- [ ] Use feedback for improvement:
+  - [ ] Tune detection parameters based on failure patterns
+  - [ ] Adjust confidence thresholds
+  - [ ] Identify edge cases for algorithm refinement
+  - [ ] Build verified dataset for future ML training
+
+#### Verification:
+- [ ] Play 50-100 real throws with feedback enabled
+- [ ] Verify feedback is correctly stored
+- [ ] Generate accuracy report
+- [ ] Identify top 3 failure modes
+
+#### Success Criteria:
+- Feedback collection works smoothly during gameplay
+- Dataset contains verified detections across all board regions
+- Analysis reveals actionable insights for improvement
+- Foundation established for future ML-based detection
+
+#### Benefits:
+- **Score-level feedback**: Natural for users ("That was T20, not S20")
+- **Complete system validation**: Tests entire pipeline (detection + fusion + mapping)
+- **Real game context**: Feedback during actual gameplay, not manual testing
+- **Continuous improvement**: System learns from mistakes over time
+- **ML foundation**: Verified dataset for training neural networks (future)
+
+---
+
 ### ⬜ Step 8: Event State Machine (Throw vs Pull-Out)
 **Status**: NOT STARTED  
 **Goal**: Recognize throw sequence: idle → impact → dart present → pull-out → idle
