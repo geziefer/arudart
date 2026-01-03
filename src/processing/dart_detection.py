@@ -18,10 +18,24 @@ class DartDetector:
         
         # Spatial mask to exclude board features (created on first detection)
         self.board_mask = None
+        
+        # Mask for previously detected darts (for multi-dart scenarios)
+        self.previous_darts_mask = None
     
-    def detect(self, pre_frame, post_frame):
+    def reset_previous_darts(self):
+        """Reset the mask of previously detected darts (call when starting new round)."""
+        self.previous_darts_mask = None
+        self.logger.info("Reset previous darts mask")
+    
+    def detect(self, pre_frame, post_frame, mask_previous=True):
         """
         Detect dart in post_frame compared to pre_frame.
+        
+        Args:
+            pre_frame: Frame before dart
+            post_frame: Frame after dart
+            mask_previous: If True, mask out previously detected darts
+            
         Returns: (tip_x, tip_y, confidence, debug_info)
         """
         if pre_frame is None or post_frame is None:
@@ -77,6 +91,11 @@ class DartDetector:
         
         # Apply spatial mask to exclude board features
         thresh = cv2.bitwise_and(thresh, thresh, mask=self.board_mask)
+        
+        # Apply previous darts mask if enabled and available
+        if mask_previous and self.previous_darts_mask is not None:
+            thresh = cv2.bitwise_and(thresh, thresh, mask=cv2.bitwise_not(self.previous_darts_mask))
+            self.logger.debug("Applied previous darts mask")
         
         # Find contours
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -149,6 +168,10 @@ class DartDetector:
         # Fit line to contour to find orientation
         tip_x, tip_y, confidence = self._find_tip(dart['contour'], thresh, post_frame.shape)
         
+        # Add detected dart to previous darts mask (for multi-dart scenarios)
+        if mask_previous:
+            self._add_to_previous_darts_mask(dart['contour'], thresh.shape)
+        
         debug_info = {
             'diff': diff,
             'thresh': thresh,
@@ -159,6 +182,26 @@ class DartDetector:
         }
         
         return tip_x, tip_y, confidence, debug_info
+    
+    def _add_to_previous_darts_mask(self, contour, image_shape):
+        """Add detected dart contour to the mask of previous darts."""
+        h, w = image_shape
+        
+        # Create mask for this dart (dilate to cover shadows/reflections)
+        dart_mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(dart_mask, [contour], -1, 255, -1)  # Fill contour
+        
+        # Dilate to cover shadows and reflections around the dart
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
+        dart_mask = cv2.dilate(dart_mask, kernel)
+        
+        # Add to cumulative mask
+        if self.previous_darts_mask is None:
+            self.previous_darts_mask = dart_mask
+        else:
+            self.previous_darts_mask = cv2.bitwise_or(self.previous_darts_mask, dart_mask)
+        
+        self.logger.info("Added detected dart to previous darts mask")
     
     def _find_tip(self, contour, thresh_image, image_shape):
         """

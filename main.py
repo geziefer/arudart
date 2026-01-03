@@ -242,10 +242,10 @@ def main():
                         logger.info(f"Saved images to {throw_dir}")
                     
                     # Update background to include this dart for next throw
-                    # This way, next dart will only show the NEW dart, not previous ones
-                    for camera_id, frame in frames.items():
-                        motion_detector.update_background(camera_id, frame)
-                        background_model.update_pre_impact(camera_id, frame)
+                    # Use the post_frame (which has the dart) to ensure dart is in background
+                    motion_detector.update_background(first_camera, post_frame)
+                    background_model.update_pre_impact(first_camera, post_frame)
+                    logger.info("Background updated to include detected dart")
                     
                     # Reset persistent change tracker to prevent repeated detections
                     for camera_id in camera_ids:
@@ -315,6 +315,9 @@ def main():
                     for camera_id, frame in stable_frames.items():
                         motion_detector.update_background(camera_id, frame)
                         background_model.update_pre_impact(camera_id, frame)
+                    
+                    # Reset previous darts mask when capturing new background
+                    dart_detector.reset_previous_darts()
                     
                     background_initialized = True
                     last_detection_time = 0  # Reset cooldown

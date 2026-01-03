@@ -198,14 +198,23 @@
 
 ---
 
-### Test Case 4: Multiple Darts
-- [ ] 4.1 Second dart near first
-- [ ] 4.2 Second dart crossing first
-- [ ] 4.3 Third dart in cluster
+### Test Case 4: Multiple Darts (Occlusion)
+- [x] 4.1 Second dart near first (same sector)
+- [x] 4.2 Second dart crossing first dart's shaft
+- [x] 4.3 Third dart in cluster
 
-**Status:** Not started
+**Status:** ⚠️ PARTIALLY PASSED (Session_005_2026-01-03_19-44-32)
+- 4.1 (Throws 1-2): ✅ Darts side by side - both detected correctly
+- 4.2 (Throws 3-4): ❌ Darts crossing - second dart split by first dart's barrel, tip detected at crossing point instead of actual tip
+- 4.3 (Throws 6-8): ✅ Three darts in cluster (not crossing) - all detected correctly
 
-**Note:** Different workflow - darts stay in board, background updates after each detection to include previous darts
+**Key Findings:**
+- Previous dart masking works well (shadows/reflections successfully masked)
+- Physical occlusion (crossing darts) breaks contour into fragments
+- Single camera cannot handle crossing darts - this is expected
+- **Requires 3-camera fusion:** Different angles will see darts separated, at least 2 cameras will have clear view
+
+**Re-test Required:** After 3-camera system implementation (Step 5-7)
 
 ---
 
