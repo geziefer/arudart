@@ -193,58 +193,68 @@ def main():
                     # Re-apply camera settings to prevent auto-adjustment drift
                     camera_manager.reapply_camera_settings()
                     
-                    first_camera = camera_ids[0]
-                    if background_model.has_pre_impact(first_camera) and first_camera in frames:
-                        pre_frame = background_model.get_pre_impact(first_camera)
-                        post_frame = frames[first_camera]
-                        
-                        tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
-                        
-                        # Always save images (even if detection failed)
-                        throw_count += 1
-                        throw_timestamp = datetime.now().strftime("%H-%M-%S")
-                        throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
-                        throw_dir.mkdir(parents=True, exist_ok=True)
-                        
-                        if tip_x is not None:
-                            logger.info(f"Dart detected! Tip at ({tip_x}, {tip_y}), confidence: {confidence:.2f}")
+                    # Run detection on all cameras
+                    throw_count += 1
+                    throw_timestamp = datetime.now().strftime("%H-%M-%S")
+                    throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
+                    throw_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    detections = {}
+                    for camera_id in camera_ids:
+                        if background_model.has_pre_impact(camera_id) and camera_id in frames:
+                            pre_frame = background_model.get_pre_impact(camera_id)
+                            post_frame = frames[camera_id]
                             
-                            # Save annotated post frame with detection
-                            annotated = post_frame.copy()
-                            cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
-                            cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
-                            cv2.putText(annotated, f"Tip: ({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                            cv2.putText(annotated, f"Conf: {confidence:.2f}", (tip_x + 15, tip_y),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
                             
-                            # Draw contour if available
-                            if debug_info and 'contour' in debug_info:
-                                cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                            detections[camera_id] = {
+                                'tip_x': tip_x,
+                                'tip_y': tip_y,
+                                'confidence': confidence,
+                                'debug_info': debug_info
+                            }
                             
-                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_annotated.jpg"), annotated)
-                        else:
-                            logger.warning("No dart detected in settled frame - saving images for analysis")
-                            # Save post frame without annotation
-                            cv2.imwrite(str(throw_dir / f"cam{first_camera}_annotated.jpg"), post_frame)
-                        
-                        # Always save pre/post and debug images
-                        cv2.imwrite(str(throw_dir / f"cam{first_camera}_pre.jpg"), pre_frame)
-                        cv2.imwrite(str(throw_dir / f"cam{first_camera}_post.jpg"), post_frame)
-                        
-                        # Save debug images
-                        if debug_info:
-                            if 'diff' in debug_info:
-                                cv2.imwrite(str(throw_dir / f"cam{first_camera}_diff.jpg"), debug_info['diff'])
-                            if 'thresh' in debug_info:
-                                cv2.imwrite(str(throw_dir / f"cam{first_camera}_thresh.jpg"), debug_info['thresh'])
-                        
-                        logger.info(f"Saved images to {throw_dir}")
+                            # Save annotated image
+                            if tip_x is not None:
+                                annotated = post_frame.copy()
+                                cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
+                                cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
+                                cv2.putText(annotated, f"Tip: ({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                cv2.putText(annotated, f"Conf: {confidence:.2f}", (tip_x + 15, tip_y),
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                if debug_info and 'contour' in debug_info:
+                                    cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                                cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), annotated)
+                            else:
+                                cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), post_frame)
+                            
+                            # Save pre/post and debug images
+                            cv2.imwrite(str(throw_dir / f"cam{camera_id}_pre.jpg"), pre_frame)
+                            cv2.imwrite(str(throw_dir / f"cam{camera_id}_post.jpg"), post_frame)
+                            if debug_info:
+                                if 'diff' in debug_info:
+                                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_diff.jpg"), debug_info['diff'])
+                                if 'thresh' in debug_info:
+                                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_thresh.jpg"), debug_info['thresh'])
+                    
+                    # Log per-camera results
+                    detected_cameras = [cam_id for cam_id, det in detections.items() if det['tip_x'] is not None]
+                    if detected_cameras:
+                        logger.info(f"Dart detected in {len(detected_cameras)}/{len(camera_ids)} cameras:")
+                        for cam_id in detected_cameras:
+                            det = detections[cam_id]
+                            logger.info(f"  Camera {cam_id}: Tip at ({det['tip_x']}, {det['tip_y']}), confidence: {det['confidence']:.2f}")
+                    else:
+                        logger.warning("No dart detected in any camera - saving images for analysis")
+                    
+                    logger.info(f"Saved images to {throw_dir}")
                     
                     # Update background to include this dart for next throw
-                    # Use the post_frame (which has the dart) to ensure dart is in background
-                    motion_detector.update_background(first_camera, post_frame)
-                    background_model.update_pre_impact(first_camera, post_frame)
+                    for camera_id in camera_ids:
+                        if camera_id in frames:
+                            motion_detector.update_background(camera_id, frames[camera_id])
+                            background_model.update_pre_impact(camera_id, frames[camera_id])
                     logger.info("Background updated to include detected dart")
                     
                     # Reset persistent change tracker to prevent repeated detections
