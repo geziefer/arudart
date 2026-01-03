@@ -112,7 +112,8 @@
    - Press 'p' to pause
    - Place dart manually
    - Press 'p' to resume and detect
-   - Press 'r' to reset for next case (except if anoterh dart at the same time is part of the test)
+   - Press 'p' again and remove dart (except for multiple darts)
+   - Press 'r' to reset for next case (except multiple darts)
 4. Note results: "5/6 detected, 1.4 failed"
 5. Report failure with throw folder name
 6. Examine images together and fix

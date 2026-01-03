@@ -294,9 +294,12 @@ def main():
                     break
                 elif key == ord('r'):
                     # Manual background reset - press 'r' after removing darts or at startup
-                    # Wait for camera to fully stabilize before capturing
-                    logger.info("Stabilizing camera for 2 seconds...")
-                    time.sleep(2.0)
+                    # Can be used while paused to reset after removing dart
+                    if paused:
+                        logger.info("Resetting background while paused...")
+                    else:
+                        logger.info("Stabilizing camera for 2 seconds...")
+                        time.sleep(2.0)
                     
                     # Capture single stable frame
                     stable_frames = {}

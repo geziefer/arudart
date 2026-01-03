@@ -38,7 +38,7 @@ class DartDetector:
         if self.blur_kernel > 0:
             diff = cv2.GaussianBlur(diff, (self.blur_kernel, self.blur_kernel), 0)
         
-        # Add edge detection to catch metallic darts (low contrast in diff)
+        # Add edge detection to catch metallic darts and flight outlines
         edges = cv2.Canny(post_gray, 50, 150)
         
         # Threshold
@@ -48,12 +48,17 @@ class DartDetector:
         thresh = cv2.bitwise_or(thresh, edges)
         
         # Morphological operations to remove small noise and bridge gaps
-        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        # Use larger opening kernel to remove scattered noise pixels
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)  # Remove small white noise
         
-        # Use larger kernel for closing to bridge gaps between shaft and tip
-        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill gaps and holes
+        # Use larger kernel for closing to bridge gaps and fill flight interior
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill gaps
+        
+        # Second closing pass to ensure flight is solid
+        kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)  # Fill large gaps in flight
         
         # Create spatial mask on first use (exclude outer numbers only)
         if self.board_mask is None:
@@ -134,8 +139,9 @@ class DartDetector:
             self.logger.info(f"No dart-like contours found (checked {len(contours)} contours)")
             return None, None, 0.0, {'diff': diff, 'thresh': thresh}
         
-        # Take largest candidate (most likely the dart)
-        dart = max(dart_candidates, key=lambda c: c['area'])
+        # Take best candidate: prefer elongated shapes (high aspect ratio) over just large area
+        # This helps when flight fragments into multiple contours
+        dart = max(dart_candidates, key=lambda c: c['aspect_ratio'] * (c['area'] ** 0.5))
         
         # Fit line to contour to find orientation
         tip_x, tip_y, confidence = self._find_tip(dart['contour'], thresh, post_frame.shape)
