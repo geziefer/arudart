@@ -179,17 +179,22 @@
 ---
 
 ### Test Case 3: Dart Orientation
-- [ ] 3.1 Straight in
-- [ ] 3.2 Angled left
-- [ ] 3.3 Angled right
-- [ ] 3.4 Angled up
-- [ ] 3.5 Angled down
-- [ ] 3.6 Angled left up
-- [ ] 3.7 Angled right up
-- [ ] 3.8 Angled left down
-- [ ] 3.9 Angled right down
+- [x] 3.1 Straight in
+- [x] 3.2 Angled left
+- [x] 3.3 Angled right
+- [x] 3.4 Angled up
+- [x] 3.5 Angled down
+- [x] 3.6 Angled left up
+- [x] 3.7 Angled right up
+- [x] 3.8 Angled left down
+- [x] 3.9 Angled right down
 
-**Status:** Not started
+**Status:** ✅ PASSED (Session_002_2026-01-03_17-16-24)
+- All 9 throws successful (5 planned + 4 diagonal cases)
+- Tip identification correct across all orientations
+- Confidence consistently 1.00 (maximum) - "widest part = flight" algorithm very robust
+- Algorithm is orientation-invariant as expected
+- Works well with straight, angled, and diagonal dart placements
 
 ---
 
@@ -199,6 +204,8 @@
 - [ ] 4.3 Third dart in cluster
 
 **Status:** Not started
+
+**Note:** Different workflow - darts stay in board, background updates after each detection to include previous darts
 
 ---
 
