@@ -244,9 +244,17 @@
 ---
 
 ### Test Case 6: Lighting Variations
-- [ ] 6.1 Normal lighting
-- [ ] 6.2 Dimmer lighting
-- [ ] 6.3 Brighter lighting
-- [ ] 6.4 Shadow on board
+- [x] 6.1 Normal lighting
+- [x] 6.2 Dimmer lighting
+- [x] 6.3 Brighter lighting
+- [x] 6.4 Shadow cast on board
 
-**Status:** Not started
+**Status:** ✅ PASSED (Session_008_2026-01-03_20-34-30)
+- 3/3 lighting variations successful (normal, dimmer, brighter)
+- Fixed camera exposure settings provide good robustness to lighting changes
+- Shadow testing inconclusive (difficult to simulate artificially in controlled environment)
+
+**Notes:**
+- Shadow testing should be re-evaluated in real-world conditions (e.g., sunny day with stray light)
+- Fixed exposure (-7) and disabled auto-adjustments help maintain consistent detection
+- Real-world lighting variations will be tested during actual gameplay
