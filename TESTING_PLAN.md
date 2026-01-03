@@ -61,6 +61,11 @@
 - **3.3** Angled right (~30° from perpendicular)
 - **3.4** Angled up
 - **3.5** Angled down
+- **3.6** Angled left up 
+- **3.7** Angled right up
+- **3.8** Angled left down
+- **3.9** Angled right down
+
 
 **Expected:** Tip identification should work regardless of angle
 
@@ -179,6 +184,10 @@
 - [ ] 3.3 Angled right
 - [ ] 3.4 Angled up
 - [ ] 3.5 Angled down
+- [ ] 3.6 Angled left up
+- [ ] 3.7 Angled right up
+- [ ] 3.8 Angled left down
+- [ ] 3.9 Angled right down
 
 **Status:** Not started
 
