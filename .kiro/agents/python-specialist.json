@@ -16,8 +16,8 @@
   ],
   "hooks": {},
   "toolsSettings": {
-    "execute_bash": {
-      "requireConfirmation": true
+    "shell": {
+      "autoAllowReadonly": true
     }
   },
   "useLegacyMcpJson": false,
