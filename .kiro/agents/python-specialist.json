@@ -10,10 +10,16 @@
   "allowedTools": ["read", "write", "shell"],
   "resources": [
     "file://project.md",
-    "file://IMPLEMENTATION_PLAN.md"
+    "file://IMPLEMENTATION_PLAN.md",
+    "file://TESTING_PLAN.md",
+    "file://DEVELOPMENT_KNOWLEDGE.md"
   ],
   "hooks": {},
-  "toolsSettings": {},
+  "toolsSettings": {
+    "execute_bash": {
+      "requireConfirmation": true
+    }
+  },
   "useLegacyMcpJson": false,
   "model": "claude-sonnet-4.5"
 }
