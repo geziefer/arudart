@@ -190,6 +190,9 @@ def main():
                             if detected:
                                 logger.info(f"  Camera {cam_id}: {amount:.2f}%")
                     
+                    # Re-apply camera settings to prevent auto-adjustment drift
+                    camera_manager.reapply_camera_settings()
+                    
                     first_camera = camera_ids[0]
                     if background_model.has_pre_impact(first_camera) and first_camera in frames:
                         pre_frame = background_model.get_pre_impact(first_camera)

@@ -156,14 +156,20 @@
 ---
 
 ### Test Case 2: Contrast Challenges
-- [ ] 2.1 White sector
-- [ ] 2.2 Different white sector
-- [ ] 2.3 Black sector
-- [ ] 2.4 Different black sector
-- [ ] 2.5 Red double
-- [ ] 2.6 Green triple
+- [x] 2.1 White sector
+- [x] 2.2 Different white sector
+- [x] 2.3 Black sector
+- [x] 2.4 Different black sector
+- [x] 2.5 Red double
+- [x] 2.6 Green triple
 
-**Status:** Not started
+**Status:** ✅ PASSED (Session_007_2026-01-03_17-03-40)
+- All 9 throws successful (6 planned + 3 extra for degradation testing)
+- Initial failures with fragmented/irregular flight shapes (throws 2, 4, 6)
+- Fixed by increasing morphological closing kernels (11x11 → 15x15 → 19x19)
+- Larger kernels connect fragmented flight pieces into single contour
+- Background degradation issue (throw #6) resolved as side effect of flight shape fix
+- Detection robust across different colored sectors (white, black, red, green)
 
 ---
 

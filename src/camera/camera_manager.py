@@ -118,6 +118,12 @@ class CameraManager:
             return None
         return self.cameras[camera_id].get_frame()
     
+    def reapply_camera_settings(self):
+        """Re-apply fixed settings to all cameras to prevent auto-adjustment drift."""
+        for camera_id, camera in self.cameras.items():
+            camera.apply_fixed_settings()
+        self.logger.debug("Re-applied fixed settings to all cameras")
+    
     def get_camera_ids(self):
         """Get list of all camera IDs."""
         return list(self.cameras.keys())

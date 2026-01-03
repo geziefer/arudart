@@ -16,6 +16,10 @@ class CameraStream:
         self.thread = None
         self.opened = False
         
+        # Store settings for re-application
+        self.auto_exposure = auto_exposure
+        self.exposure = exposure
+        
         # Open camera
         self.cap = cv2.VideoCapture(device_index)
         if not self.cap.isOpened():
@@ -28,10 +32,22 @@ class CameraStream:
         self.cap.set(cv2.CAP_PROP_FPS, fps)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
         
+        # Apply fixed settings
+        self.apply_fixed_settings()
+        
+        # Log actual settings
+        actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.logger.info(f"Camera {device_index} opened: {actual_width}x{actual_height} @ {actual_fps} FPS")
+        self.opened = True
+    
+    def apply_fixed_settings(self):
+        """Apply fixed camera settings to prevent auto-adjustments from re-enabling."""
         # Set exposure
-        if not auto_exposure:
+        if not self.auto_exposure:
             self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # Manual mode
-            self.cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+            self.cap.set(cv2.CAP_PROP_EXPOSURE, self.exposure)
         
         # Disable auto white balance
         self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)  # 0 = off
@@ -43,14 +59,7 @@ class CameraStream:
         # Disable auto gain
         self.cap.set(cv2.CAP_PROP_GAIN, 0)  # Fixed gain
         
-        self.logger.info(f"Camera {device_index}: Disabled auto-adjustments (WB, focus, gain)")
-        
-        # Log actual settings
-        actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-        self.logger.info(f"Camera {device_index} opened: {actual_width}x{actual_height} @ {actual_fps} FPS")
-        self.opened = True
+        self.logger.debug(f"Camera {self.device_index}: Re-applied fixed settings")
     
     def start(self):
         """Start capture thread."""

@@ -52,13 +52,16 @@ class DartDetector:
         kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)  # Remove small noise while preserving tip
         
-        # Use larger kernel for closing to bridge gaps and fill flight interior
-        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill gaps
+        # Use progressively larger kernels for closing to bridge gaps and fill flight interior
+        # This handles flights with irregular shapes, gaps, or holes
+        kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_medium)  # Fill medium gaps
         
-        # Second closing pass to ensure flight is solid
-        kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)  # Fill large gaps in flight
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill large gaps in flight
+        
+        kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)  # Connect fragmented flight pieces
         
         # Create spatial mask on first use (exclude outer numbers only)
         if self.board_mask is None:
