@@ -159,9 +159,9 @@ class DartDetector:
     
     def _find_tip(self, contour, thresh_image, image_shape):
         """
-        Find dart tip using contour taper analysis.
-        Tip = narrow end (tapers to point)
-        Flight = wide end (bulky)
+        Find dart tip by identifying the flight (widest part) and taking the opposite end.
+        Flight = widest, most bulky part
+        Tip = opposite end from flight
         """
         # Fit line to contour
         [vx, vy, x0, y0] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -170,37 +170,57 @@ class DartDetector:
         contour_points = contour.reshape(-1, 2)
         
         # Project all points onto the fitted line to find endpoints
-        # Line parameter t: point = (x0, y0) + t * (vx, vy)
         t_values = []
         for point in contour_points:
-            # t = dot(point - (x0,y0), (vx,vy))
             t = (point[0] - x0) * vx + (point[1] - y0) * vy
             t_values.append(t)
         
         t_min = min(t_values)
         t_max = max(t_values)
+        t_values = np.array(t_values)
+        
+        # Find the widest part of the dart (the flight)
+        # Divide dart into segments and measure width of each
+        dart_length = t_max - t_min
+        num_segments = 10
+        segment_size = dart_length / num_segments
+        
+        max_width = 0
+        flight_position = 0  # 0 = near end1, 1 = near end2
+        
+        for i in range(num_segments):
+            segment_start = t_min + i * segment_size
+            segment_end = segment_start + segment_size
+            segment_mask = (t_values >= segment_start) & (t_values < segment_end)
+            
+            if np.sum(segment_mask) < 2:
+                continue
+            
+            # Index using the 1D mask (contour_points is Nx2, mask is N)
+            segment_points = contour_points[segment_mask.flatten()]
+            # Width = standard deviation of points in this segment
+            width = np.std(segment_points, axis=0).mean()
+            
+            if width > max_width:
+                max_width = width
+                flight_position = i / num_segments  # 0 to 1
         
         # Calculate endpoints
         end1 = (int(x0 + t_min * vx), int(y0 + t_min * vy))
         end2 = (int(x0 + t_max * vx), int(y0 + t_max * vy))
         
-        # Measure contour width at both ends (taper analysis)
-        # Tip is narrow, flight is wide
-        width1 = self._measure_contour_width(contour_points, end1)
-        width2 = self._measure_contour_width(contour_points, end2)
-        
-        # Tip is the narrower end
-        if width1 < width2:
-            tip = end1
-            confidence = (width2 - width1) / max(width2, 1)
-        else:
+        # Tip is the end opposite to the flight
+        if flight_position < 0.5:
+            # Flight is near end1, so tip is end2
             tip = end2
-            confidence = (width1 - width2) / max(width1, 1)
+        else:
+            # Flight is near end2, so tip is end1
+            tip = end1
         
-        # Clamp confidence to [0, 1]
-        confidence = min(max(confidence, 0.0), 1.0)
+        # Confidence based on how distinct the flight is
+        confidence = min(max_width / 20.0, 1.0)  # Normalize by expected flight width
         
-        self.logger.debug(f"Tip at {tip}, confidence: {confidence:.2f}, widths: {width1:.1f}, {width2:.1f}")
+        self.logger.debug(f"Flight at position {flight_position:.2f}, max_width={max_width:.1f}, tip at {tip}")
         
         return tip[0], tip[1], confidence
     
@@ -211,9 +231,9 @@ class DartDetector:
         """
         endpoint = np.array(endpoint)
         
-        # Find points within 20 pixels of endpoint
+        # Find points within 10 pixels of endpoint (reduced from 20 for more localized measurement)
         distances = np.linalg.norm(contour_points - endpoint, axis=1)
-        nearby_mask = distances < 20
+        nearby_mask = distances < 10
         
         if not np.any(nearby_mask):
             return 0.0

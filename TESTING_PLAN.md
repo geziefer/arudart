@@ -140,14 +140,18 @@
 ---
 
 ### Test Case 1: Basic Detection Validation
-- [ ] 1.1 Bull's eye
-- [ ] 1.2 Single 17
-- [ ] 1.3 Triple 17
-- [ ] 1.4 Double 17
-- [ ] 1.5 Single 3
-- [ ] 1.6 Single 2
+- [x] 1.1 Bull's eye
+- [x] 1.2 Single 17
+- [x] 1.3 Triple 17
+- [x] 1.4 Double 17
+- [x] 1.5 Single 3
+- [x] 1.6 Single 2
 
-**Status:** Not started
+**Status:** ✅ PASSED (Session_001_2026-01-03_09-16-33, Session_003_2026-01-03_09-41-45)
+- All 6 throws successful across different board regions
+- 1.1 Bull initially failed, required algorithm fix (changed from endpoint width comparison to finding widest part as flight)
+- Algorithm now correctly handles embedded tips (common in bull throws)
+- Detection works consistently across entire board
 
 ---
 
