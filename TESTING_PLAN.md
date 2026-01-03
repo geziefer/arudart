@@ -222,16 +222,24 @@
 ---
 
 ### Test Case 5: Edge Cases
-- **5.1** Dart in triple close to small single 
-- **5.2** Dart in triple close to big single 
-- **5.3** Dart in double close to single
-- **5.4** Dart in double close to out
-- **5.5** Dart in triple close to next triple
-- **5.6** Dart in double close to next double
-- **5.7** Dart in white single close to next single
-- **5.8** Dart in black single close to next single
+- [x] 5.1 Dart in triple close to small single 
+- [x] 5.2 Dart in triple close to big single 
+- [x] 5.3 Dart in double close to single
+- [x] 5.4 Dart in double close to out
+- [x] 5.5 Dart in triple close to next triple
+- [x] 5.6 Dart in double close to next double
+- [x] 5.7 Dart in white single close to next single
+- [x] 5.8 Dart in black single close to next single
 
-**Status:** Not started
+**Status:** ✅ PASSED (Session_006_2026-01-03_20-00-59)
+- 8/8 throws detected correctly (first throw re-tested after initial background noise issue)
+- Tip detection works near wires and sector boundaries
+- Algorithm handles edge cases well
+
+**Notes:**
+- Occasional background instability on first throw (known issue, not systematic)
+- Exact sector determination requires calibration + 3-camera fusion (expected)
+- Single-camera pixel coordinates are intermediate data, not final score
 
 ---
 
