@@ -48,9 +48,9 @@ class DartDetector:
         thresh = cv2.bitwise_or(thresh, edges)
         
         # Morphological operations to remove small noise and bridge gaps
-        # Use larger opening kernel to remove scattered noise pixels
-        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)  # Remove small white noise
+        # Use smaller opening to preserve thin tip, but still remove scattered noise
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)  # Remove small noise while preserving tip
         
         # Use larger kernel for closing to bridge gaps and fill flight interior
         kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))

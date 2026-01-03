@@ -15,11 +15,11 @@
 **Goal:** Verify that same dart gives same results
 
 - **0.1** Single 17 large single 
-- **0.1** Single 17 large single
-- **0.1** Single 17 large single
-- **0.1** Single 2 large single 
-- **0.1** Single 2 large single
-- **0.1** Single 2 large single
+- **0.2** Single 17 large single
+- **0.3** Single 17 large single
+- **0.4** Single 2 large single 
+- **0.5** Single 2 large single
+- **0.6** Single 2 large single
 
 **Expected:** All should detect tip correctly and all three of each number should be very similar
 
@@ -119,3 +119,84 @@
 6. Examine images together and fix
 7. Re-test failed case
 8. Move to next test case when all pass
+
+---
+
+## Results Tracking
+
+### Test Case 0: Reproducible Detection
+- [x] 0.1 Single 17
+- [x] 0.2 Single 17
+- [x] 0.3 Single 17
+- [x] 0.4 Single 2
+- [x] 0.5 Single 2
+- [x] 0.6 Single 2
+
+**Status:** ✅ PASSED (Session_002_2026-01-03_09-07-30)
+- Tip detection accurate (reaches actual steel point)
+- Consistent coordinates across repeated placements
+- Confidence: 0.30-0.49 (acceptable for gradual taper)
+
+---
+
+### Test Case 1: Basic Detection Validation
+- [ ] 1.1 Bull's eye
+- [ ] 1.2 Single 17
+- [ ] 1.3 Triple 17
+- [ ] 1.4 Double 17
+- [ ] 1.5 Single 3
+- [ ] 1.6 Single 2
+
+**Status:** Not started
+
+---
+
+### Test Case 2: Contrast Challenges
+- [ ] 2.1 White sector
+- [ ] 2.2 Different white sector
+- [ ] 2.3 Black sector
+- [ ] 2.4 Different black sector
+- [ ] 2.5 Red double
+- [ ] 2.6 Green triple
+
+**Status:** Not started
+
+---
+
+### Test Case 3: Dart Orientation
+- [ ] 3.1 Straight in
+- [ ] 3.2 Angled left
+- [ ] 3.3 Angled right
+- [ ] 3.4 Angled up
+- [ ] 3.5 Angled down
+
+**Status:** Not started
+
+---
+
+### Test Case 4: Multiple Darts
+- [ ] 4.1 Second dart near first
+- [ ] 4.2 Second dart crossing first
+- [ ] 4.3 Third dart in cluster
+
+**Status:** Not started
+
+---
+
+### Test Case 5: Edge Cases
+- [ ] 5.1 Close to wire
+- [ ] 5.2 Obscured by wire
+- [ ] 5.3 Near number ring
+- [ ] 5.4 Bounce-out
+
+**Status:** Not started
+
+---
+
+### Test Case 6: Lighting Variations
+- [ ] 6.1 Normal lighting
+- [ ] 6.2 Dimmer lighting
+- [ ] 6.3 Brighter lighting
+- [ ] 6.4 Shadow on board
+
+**Status:** Not started
