@@ -85,11 +85,14 @@
 ### Test Case 5: Edge Cases
 **Goal:** Test boundary conditions
 
-- **5.1** Dart in triple close to single 
-- **5.2** Dart in triple close to out
-- **5.3** Dart in triple close to next triple
-- **5.4** Dart in white single close to next single
-- **5.5** Dart in black single close to next single
+- **5.1** Dart in triple close to small single 
+- **5.2** Dart in triple close to big single 
+- **5.3** Dart in double close to single
+- **5.4** Dart in double close to out
+- **5.5** Dart in triple close to next triple
+- **5.6** Dart in double close to next double
+- **5.7** Dart in white single close to next single
+- **5.8** Dart in black single close to next single
 
 **Expected:** Wire interference, edge detection limits
 
@@ -219,10 +222,14 @@
 ---
 
 ### Test Case 5: Edge Cases
-- [ ] 5.1 Close to wire
-- [ ] 5.2 Obscured by wire
-- [ ] 5.3 Near number ring
-- [ ] 5.4 Bounce-out
+- **5.1** Dart in triple close to small single 
+- **5.2** Dart in triple close to big single 
+- **5.3** Dart in double close to single
+- **5.4** Dart in double close to out
+- **5.5** Dart in triple close to next triple
+- **5.6** Dart in double close to next double
+- **5.7** Dart in white single close to next single
+- **5.8** Dart in black single close to next single
 
 **Status:** Not started
 
