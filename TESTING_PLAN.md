@@ -130,6 +130,52 @@
 
 ---
 
+---
+
+## Test Plan for 3-Camera System (Step 5)
+
+### Test Case 7: Multi-Camera Detection
+**Goal:** Verify detection works across all 3 cameras simultaneously
+
+- **7.1** Bull's eye - verify all 3 cameras detect
+- **7.2** Single 20 (top) - verify detection from different angles
+- **7.3** Single 3 (bottom left) - test camera occlusion scenarios
+- **7.4** Single 11 (bottom right) - test camera occlusion scenarios
+- **7.5** Crossing darts (TC4.2 retry) - verify at least 2 cameras detect when darts cross
+
+**Expected:** 
+- At least 2/3 cameras should detect in most cases
+- Crossing darts should be detected by cameras with clear view
+- Per-camera confidence scores should reflect detection quality
+
+---
+
+### Test Case 8: Camera Synchronization
+**Goal:** Verify all cameras capture frames at the same moment
+
+- **8.1** Fast hand movement across board
+- **8.2** Dart throw with visible motion blur
+- **8.3** Check timestamps in saved images
+
+**Expected:**
+- Pre/post frames from all cameras should show same board state
+- No significant time lag between camera captures
+- Motion detection should trigger on all cameras simultaneously
+
+---
+
+### Test Case 9: Per-Camera Detection Rates
+**Goal:** Identify which camera angles work best
+
+- **9.1-9.20** 20 throws across different board regions
+
+**Expected:**
+- Track detection rate per camera (e.g., cam0: 18/20, cam1: 15/20, cam2: 17/20)
+- Identify blind spots per camera
+- Verify at least 1 camera detects in >95% of throws
+
+---
+
 ## Results Tracking
 
 ### Test Case 0: Reproducible Detection
