@@ -138,9 +138,9 @@
 **Goal:** Verify detection works across all 3 cameras simultaneously
 
 - **7.1** Bull's eye - verify all 3 cameras detect
-- **7.2** Single 20 (top) - verify detection from different angles
-- **7.3** Single 3 (bottom left) - test camera occlusion scenarios
-- **7.4** Single 11 (bottom right) - test camera occlusion scenarios
+- **7.2** Single 17 (near camera right bottom) - verify detection from different angles
+- **7.3** Single 18 (near camera right top) - verify detection from different angles
+- **7.4** Single 11 (near camera left middle) - verify detection from different angles
 - **7.5** Crossing darts (TC4.2 retry) - verify at least 2 cameras detect when darts cross
 
 **Expected:** 
