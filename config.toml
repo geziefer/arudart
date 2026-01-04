@@ -6,13 +6,25 @@ min_height = 600
 exclude_builtin = true
 max_index = 10
 
+# Camera position mapping (clockwise from top):
+# cam0 = upper right (near 18, ~1 o'clock)
+# cam1 = lower right (near 17, ~5 o'clock) - was single-camera test position
+# cam2 = left (near 11, ~9 o'clock)
+
 [camera_settings]
 width = 800
 height = 600
 fps = 25
 fourcc = "MJPG"
 auto_exposure = false
-exposure = -7  # Lowered from -6 for better contrast with metallic darts
+exposure = -7  # Default exposure
+
+# Per-camera exposure overrides (adjust based on camera position/lighting)
+# Note: Exposure values tuned based on TC7 multi-camera test results
+[camera_settings.per_camera]
+cam0 = -5  # Upper right (near 18) - TC7 showed weak signal, needs brighter
+cam1 = -5  # Lower right (near 17) - TC7 showed weak signal, needs brighter (was good in single-cam, may be angle-dependent)
+cam2 = -7  # Left (near 11) - TC7 showed strong signal, keep current exposure
 
 [motion_detection]
 downscale_factor = 4
@@ -23,7 +35,7 @@ motion_check_interval = 0.05  # Faster checks (20 FPS) to catch brief motion
 settled_time = 0.5  # Wait 0.5s after motion stops before detecting dart
 
 [dart_detection]
-diff_threshold = 15  # Lower to detect subtle dart changes
+diff_threshold = 10  # Lowered from 15 to catch weaker signals from cam0/cam1
 blur_kernel = 3  # Smaller blur to preserve dart details
 min_dart_area = 50  # Lower minimum (dart might be small)
 max_dart_area = 10000  # Increased - dart with flight can be large

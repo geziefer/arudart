@@ -22,7 +22,13 @@ class CameraManager:
             self.logger.info(f"Initialized {len(self.cameras)} camera(s)")
     
     def _auto_detect_cameras(self, config):
-        """Auto-detect cameras based on criteria."""
+        """Auto-detect cameras based on criteria.
+        
+        Camera position mapping (clockwise from top):
+        - cam0 = upper right (near 18, ~1 o'clock)
+        - cam1 = lower right (near 17, ~5 o'clock)
+        - cam2 = left (near 11, ~9 o'clock)
+        """
         detection_config = config['camera_detection']
         camera_settings = config['camera_settings']
         
@@ -72,7 +78,12 @@ class CameraManager:
                 self.logger.debug(f"Camera {idx} resolution too low: {actual_width}x{actual_height}")
         
         # Initialize detected cameras
-        for camera_id in found_cameras:
+        for cam_idx, camera_id in enumerate(found_cameras):
+            # Get per-camera exposure if available
+            per_camera_config = camera_settings.get('per_camera', {})
+            cam_key = f'cam{cam_idx}'
+            exposure = per_camera_config.get(cam_key, camera_settings.get('exposure', -6))
+            
             camera = CameraStream(
                 device_index=camera_id,
                 width=camera_settings['width'],
@@ -80,12 +91,12 @@ class CameraManager:
                 fps=camera_settings['fps'],
                 fourcc=camera_settings['fourcc'],
                 auto_exposure=camera_settings.get('auto_exposure', False),
-                exposure=camera_settings.get('exposure', -6)
+                exposure=exposure
             )
             
             if camera.opened:
                 self.cameras[camera_id] = camera
-                self.logger.info(f"Initialized camera {camera_id}")
+                self.logger.info(f"Initialized camera {camera_id} (cam{cam_idx}) with exposure {exposure}")
     
     def _init_from_config(self, config):
         """Initialize cameras from explicit config (legacy)."""
