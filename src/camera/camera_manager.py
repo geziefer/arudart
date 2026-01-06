@@ -1,5 +1,6 @@
 import logging
 from .camera_stream import CameraStream
+from .camera_control import apply_camera_settings
 import cv2
 
 
@@ -79,24 +80,32 @@ class CameraManager:
         
         # Initialize detected cameras
         for cam_idx, camera_id in enumerate(found_cameras):
-            # Get per-camera exposure if available
-            per_camera_config = camera_settings.get('per_camera', {})
             cam_key = f'cam{cam_idx}'
-            exposure = per_camera_config.get(cam_key, camera_settings.get('exposure', -6))
+            
+            # Apply platform-specific camera control if enabled
+            if 'camera_control' in config and config['camera_control'].get('enabled', False):
+                control_config = config['camera_control'].get('per_camera', {}).get(cam_key, {})
+                if control_config:
+                    self.logger.info(f"Applying camera control to {cam_key} (device {camera_id})")
+                    apply_camera_settings(
+                        device_index=camera_id,
+                        exposure_time_ms=control_config.get('exposure_time_ms', 3),
+                        auto_exposure=control_config.get('auto_exposure', False),
+                        auto_white_balance=control_config.get('auto_white_balance', False),
+                        auto_focus=control_config.get('auto_focus', False)
+                    )
             
             camera = CameraStream(
                 device_index=camera_id,
                 width=camera_settings['width'],
                 height=camera_settings['height'],
                 fps=camera_settings['fps'],
-                fourcc=camera_settings['fourcc'],
-                auto_exposure=camera_settings.get('auto_exposure', False),
-                exposure=exposure
+                fourcc=camera_settings['fourcc']
             )
             
             if camera.opened:
                 self.cameras[camera_id] = camera
-                self.logger.info(f"Initialized camera {camera_id} (cam{cam_idx}) with exposure {exposure}")
+                self.logger.info(f"Initialized camera {camera_id} (cam{cam_idx})")
     
     def _init_from_config(self, config):
         """Initialize cameras from explicit config (legacy)."""
@@ -128,12 +137,6 @@ class CameraManager:
         if camera_id not in self.cameras:
             return None
         return self.cameras[camera_id].get_frame()
-    
-    def reapply_camera_settings(self):
-        """Re-apply fixed settings to all cameras to prevent auto-adjustment drift."""
-        for camera_id, camera in self.cameras.items():
-            camera.apply_fixed_settings()
-        self.logger.debug("Re-applied fixed settings to all cameras")
     
     def get_camera_ids(self):
         """Get list of all camera IDs."""

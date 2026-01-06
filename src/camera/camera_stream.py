@@ -6,7 +6,7 @@ import logging
 class CameraStream:
     """Threaded camera capture for continuous frame grabbing."""
     
-    def __init__(self, device_index, width, height, fps, fourcc, auto_exposure=False, exposure=-6):
+    def __init__(self, device_index, width, height, fps, fourcc):
         self.device_index = device_index
         self.logger = logging.getLogger(f'arudart.camera.{device_index}')
         self.cap = None
@@ -15,10 +15,6 @@ class CameraStream:
         self.running = False
         self.thread = None
         self.opened = False
-        
-        # Store settings for re-application
-        self.auto_exposure = auto_exposure
-        self.exposure = exposure
         
         # Open camera
         self.cap = cv2.VideoCapture(device_index)
@@ -31,9 +27,9 @@ class CameraStream:
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
-        
-        # Apply fixed settings
-        self.apply_fixed_settings()
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.cap.set(cv2.CAP_PROP_FPS, fps)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
         
         # Log actual settings
         actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -41,25 +37,6 @@ class CameraStream:
         actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.logger.info(f"Camera {device_index} opened: {actual_width}x{actual_height} @ {actual_fps} FPS")
         self.opened = True
-    
-    def apply_fixed_settings(self):
-        """Apply fixed camera settings to prevent auto-adjustments from re-enabling."""
-        # Set exposure
-        if not self.auto_exposure:
-            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # Manual mode
-            self.cap.set(cv2.CAP_PROP_EXPOSURE, self.exposure)
-        
-        # Disable auto white balance
-        self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)  # 0 = off
-        self.cap.set(cv2.CAP_PROP_WB_TEMPERATURE, 4000)  # Fixed color temperature
-        
-        # Disable auto focus (if supported)
-        self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # 0 = off
-        
-        # Disable auto gain
-        self.cap.set(cv2.CAP_PROP_GAIN, 0)  # Fixed gain
-        
-        self.logger.debug(f"Camera {self.device_index}: Re-applied fixed settings")
     
     def start(self):
         """Start capture thread."""

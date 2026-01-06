@@ -127,13 +127,13 @@ def main():
         if args.show_histogram:
             logger.info("Histogram display enabled - use to verify exposure settings")
         
-        # Position windows diagonally in dev mode
+        # Position windows in a tiled layout in dev mode
         if args.dev_mode:
-            # In manual test mode, only show camera 0
-            cameras_to_show = [0] if args.manual_test else camera_ids
-            for i, camera_id in enumerate(cameras_to_show):
+            # Show all cameras in overlapping layout (cascaded)
+            for i, camera_id in enumerate(camera_ids):
                 cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
                 cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
+                # Cascade windows with offset
                 cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
         
         start_time = time.time()
@@ -189,9 +189,6 @@ def main():
                         for cam_id, (detected, amount) in per_camera_motion.items():
                             if detected:
                                 logger.info(f"  Camera {cam_id}: {amount:.2f}%")
-                    
-                    # Re-apply camera settings to prevent auto-adjustment drift
-                    camera_manager.reapply_camera_settings()
                     
                     # Run detection on all cameras
                     throw_count += 1
@@ -265,10 +262,8 @@ def main():
             
             # Display frames in dev mode
             if args.dev_mode and frames:
-                # In manual test mode, only show camera 0; otherwise show all cameras
-                cameras_to_show = [camera_ids[0]] if args.manual_test else camera_ids
-                
-                for camera_id in cameras_to_show:
+                # Show all cameras in tiled layout
+                for camera_id in camera_ids:
                     if camera_id not in frames:
                         continue
                     

@@ -10,21 +10,30 @@ max_index = 10
 # cam0 = upper right (near 18, ~1 o'clock)
 # cam1 = lower right (near 17, ~5 o'clock) - was single-camera test position
 # cam2 = left (near 11, ~9 o'clock)
+#
+# IMPORTANT: Camera indices depend on USB port enumeration order.
+# To maintain consistent cam0/cam1/cam2 mapping, always plug cameras into the SAME USB ports:
+# - USB port A → cam0 (upper right/18)
+# - USB port B → cam1 (lower right/17)
+# - USB port C → cam2 (left/11)
 
 [camera_settings]
 width = 800
 height = 600
 fps = 25
 fourcc = "MJPG"
-auto_exposure = false
-exposure = -7  # Default exposure
 
-# Per-camera exposure overrides (adjust based on camera position/lighting)
-# Note: Exposure values tuned based on TC7 multi-camera test results
-[camera_settings.per_camera]
-cam0 = -5  # Upper right (near 18) - TC7 showed weak signal, needs brighter
-cam1 = -5  # Lower right (near 17) - TC7 showed weak signal, needs brighter (was good in single-cam, may be angle-dependent)
-cam2 = -7  # Left (near 11) - TC7 showed strong signal, keep current exposure
+# Platform-specific camera control (v4l2-ctl on Linux, uvc-util on macOS)
+# Automatically detects platform and uses appropriate tool
+[camera_control]
+enabled = true
+# exposure_time_ms: Fixed exposure time in milliseconds (e.g. 3ms = 3000µs)
+# Lower = darker, higher = brighter
+# Typical range: 1-10ms (adjust per camera based on lighting)
+[camera_control.per_camera]
+cam0 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam1 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam2 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
 
 [motion_detection]
 downscale_factor = 4
@@ -35,7 +44,7 @@ motion_check_interval = 0.05  # Faster checks (20 FPS) to catch brief motion
 settled_time = 0.5  # Wait 0.5s after motion stops before detecting dart
 
 [dart_detection]
-diff_threshold = 10  # Lowered from 15 to catch weaker signals from cam0/cam1
+diff_threshold = 5  # Very low - compensate for overexposed cameras (macOS can't control exposure)
 blur_kernel = 3  # Smaller blur to preserve dart details
 min_dart_area = 50  # Lower minimum (dart might be small)
 max_dart_area = 10000  # Increased - dart with flight can be large
