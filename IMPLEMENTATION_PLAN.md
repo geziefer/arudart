@@ -457,8 +457,13 @@ gain = 0
 # Normal mode (automatic detection, all cameras shown)
 python main.py --dev-mode
 
-# Manual testing mode (pause/play, single camera)
+# Manual testing mode (pause/play)
 python main.py --dev-mode --manual-test
+
+# Single-camera testing mode (test individual cameras)
+python main.py --dev-mode --manual-test --single-camera 0  # Test cam0 only
+python main.py --dev-mode --manual-test --single-camera 1  # Test cam1 only
+python main.py --dev-mode --manual-test --single-camera 2  # Test cam2 only
 
 # With histogram
 python main.py --dev-mode --manual-test --show-histogram
@@ -471,49 +476,68 @@ python main.py --dev-mode --manual-test --show-histogram
 4. Remove dart, press 'r' to reset
 5. Repeat
 
+#### Single-Camera Testing:
+- Use `--single-camera N` to test individual cameras before multi-camera fusion
+- Allows per-camera tuning of exposure, contrast, gamma settings
+- Run TC0-TC6 test cases on each camera separately
+- Document per-camera detection rates
+- Camera mapping: 0=upper right (18), 1=lower right (17), 2=left (11)
+
 #### Benefits:
 - Test specific dart positions/angles
 - Test multiple dart constellations
 - Repeatable test cases
 - No throwing skill required
+- Per-camera tuning and validation
 - Permanent feature for future debugging
 
 ---
 
 ### ⬜ Step 5: Extend Dart Detection to 3 Cameras
-**Status**: NOT STARTED  
+**Status**: IN PROGRESS  
 **Goal**: Get per-camera tip detections for each throw
 
 #### Tasks:
-- [ ] Extend `BackgroundModel`:
-  - [ ] Maintain pre/post frames for all 3 cameras
-- [ ] Run `DartDetector` on all cameras:
-  - [ ] Parallel or sequential processing
-  - [ ] Handle detection failures (None/invalid)
-- [ ] Collect per-camera results:
-  - [ ] List of detections with camera ID
-  - [ ] Coordinates, confidence, validity flag
-- [ ] Update image saving:
-  - [ ] Save annotated images from all 3 cameras
-  - [ ] Organize in per-throw folder structure
-- [ ] Update logging:
-  - [ ] Log which cameras detected dart
-  - [ ] Log per-camera confidence scores
+- [x] Extend `BackgroundModel`:
+  - [x] Maintain pre/post frames for all 3 cameras
+- [x] Run `DartDetector` on all cameras:
+  - [x] Sequential processing per camera
+  - [x] Handle detection failures (None/invalid)
+- [x] Collect per-camera results:
+  - [x] List of detections with camera ID
+  - [x] Coordinates, confidence, validity flag
+- [x] Update image saving:
+  - [x] Save annotated images from all 3 cameras
+  - [x] Organize in per-throw folder structure
+- [x] Update logging:
+  - [x] Log which cameras detected dart
+  - [x] Log per-camera confidence scores
+- [x] Platform-specific camera control:
+  - [x] Implement v4l2-ctl wrapper (Linux)
+  - [x] Implement uvc-util wrapper (macOS)
+  - [x] Per-camera exposure, contrast, gamma tuning
+- [ ] Per-camera testing and optimization (Step 4.7 equivalent):
+  - [ ] Test each camera individually with `--single-camera` flag
+  - [ ] Run TC0-TC6 on cam0, cam1, cam2 separately
+  - [ ] Document per-camera detection rates
+  - [ ] Verify exposure/contrast/gamma settings
 
 #### Verification:
-- [ ] Test with multiple throws
-- [ ] Check per-throw folders with 3 annotated images
+- [ ] Test with multiple throws on each camera individually
+- [ ] Check per-throw folders with 3 annotated images (multi-camera mode)
 - [ ] Monitor detection rate per camera
-- [ ] At least 1 camera should detect in most throws
+- [ ] At least 2/3 cameras should detect in most throws
 
 #### Success Criteria:
 - Per-camera detections logged and saved
-- At least one camera consistently detects dart
+- At least two cameras consistently detect dart (≥2/3 rate)
 - Images available for manual validation
+- Per-camera settings optimized
 
 #### Notes:
-- Some cameras may fail due to occlusion
+- Some cameras may fail due to occlusion (expected)
 - Expect varying detection rates per camera angle
+- Single-camera testing mode allows isolated validation before fusion
 
 ---
 

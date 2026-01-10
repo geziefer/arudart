@@ -49,6 +49,7 @@ def main():
     parser.add_argument('--dev-mode', action='store_true', help='Enable development mode with preview')
     parser.add_argument('--show-histogram', action='store_true', help='Show histogram overlay (dev mode only)')
     parser.add_argument('--manual-test', action='store_true', help='Enable manual testing mode (pause/place dart/detect)')
+    parser.add_argument('--single-camera', type=int, choices=[0, 1, 2], help='Test single camera only (0, 1, or 2)')
     args = parser.parse_args()
     
     # Setup logging
@@ -66,6 +67,20 @@ def main():
     if not camera_manager.get_camera_ids():
         logger.error("No cameras available - exiting")
         return
+    
+    # Filter to single camera if requested
+    all_camera_ids = camera_manager.get_camera_ids()
+    if args.single_camera is not None:
+        # Map logical camera index (0,1,2) to physical device ID
+        if args.single_camera < len(all_camera_ids):
+            camera_ids = [sorted(all_camera_ids)[args.single_camera]]
+            logger.info(f"Single-camera mode: Using camera {args.single_camera} (device {camera_ids[0]})")
+        else:
+            logger.error(f"Camera {args.single_camera} not available (only {len(all_camera_ids)} cameras detected)")
+            return
+    else:
+        camera_ids = all_camera_ids
+        logger.info(f"Multi-camera mode: Using all {len(camera_ids)} cameras")
     
     camera_manager.start_all()
     
@@ -90,8 +105,7 @@ def main():
         aspect_ratio_min=dart_config['aspect_ratio_min']
     )
     
-    # FPS counters per camera
-    camera_ids = camera_manager.get_camera_ids()
+    # FPS counters per camera (use filtered camera_ids from above)
     fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
     
     # Motion detection state
