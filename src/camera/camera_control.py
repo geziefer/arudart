@@ -71,14 +71,19 @@ def _apply_uvc_settings(device_index, exposure_time_ms, auto_exposure,
     """Apply settings using uvc-util (macOS)."""
     device = str(device_index)
     
-    # Use local uvc-util binary (in project root)
+    # Use local uvc-util binary (in project root, same level as main.py)
     import os
+    # Get the project root (parent of src/)
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    uvc_util_path = os.path.join(script_dir, 'uvc-util')
+    project_root = os.path.dirname(script_dir)  # Go up one more level from src/camera/
+    uvc_util_path = os.path.join(project_root, 'uvc-util')
     
     # Fall back to system uvc-util if local not found
     if not os.path.exists(uvc_util_path):
         uvc_util_path = 'uvc-util'
+        logger.warning(f"Local uvc-util not found at {uvc_util_path}, trying system PATH")
+    else:
+        logger.debug(f"Using local uvc-util at {uvc_util_path}")
     
     try:
         # Build command with all settings in one call
@@ -94,7 +99,7 @@ def _apply_uvc_settings(device_index, exposure_time_ms, auto_exposure,
         if not auto_white_balance:
             cmd.extend(['-s', 'auto-white-balance-temp=0'])
         
-        subprocess.run(cmd, check=True, capture_output=True)
+        result = subprocess.run(cmd, check=True, capture_output=True)
         
         logger.info(f"Applied uvc-util settings to device {device}: exposure={exposure_time_ms}ms ({exposure_value}µs), auto_exposure={auto_exposure}")
         return True

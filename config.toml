@@ -31,9 +31,9 @@ enabled = true
 # Lower = darker, higher = brighter
 # Typical range: 1-10ms (adjust per camera based on lighting)
 [camera_control.per_camera]
-cam0 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
-cam1 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
-cam2 = { exposure_time_ms = 3, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam0 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam1 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam2 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
 
 [motion_detection]
 downscale_factor = 4
