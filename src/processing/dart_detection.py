@@ -161,9 +161,19 @@ class DartDetector:
             self.logger.info(f"No dart-like contours found (checked {len(contours)} contours)")
             return None, None, 0.0, {'diff': diff, 'thresh': thresh}
         
-        # Take best candidate: prefer elongated shapes (high aspect ratio) over just large area
-        # This helps when flight fragments into multiple contours
-        dart = max(dart_candidates, key=lambda c: c['aspect_ratio'] * (c['area'] ** 0.5))
+        # Score candidates: prioritize elongated, non-circular shapes
+        # Score = area * aspect_ratio * (1 - circularity)
+        # This heavily favors dart-like shapes (elongated, low circularity) over board blobs (compact, circular)
+        for candidate in dart_candidates:
+            candidate['score'] = (
+                candidate['area'] * 
+                candidate['aspect_ratio'] * 
+                (1.0 - candidate['circularity'])
+            )
+            self.logger.info(f"  Score: {candidate['score']:.1f} (area={candidate['area']:.0f} * aspect={candidate['aspect_ratio']:.1f} * (1-circ={1-candidate['circularity']:.2f}))")
+        
+        # Take best candidate by score (not just largest area)
+        dart = max(dart_candidates, key=lambda c: c['score'])
         
         # Fit line to contour to find orientation
         tip_x, tip_y, confidence = self._find_tip(dart['contour'], thresh, post_frame.shape)

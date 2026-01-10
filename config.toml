@@ -48,7 +48,7 @@ motion_check_interval = 0.05  # Faster checks (20 FPS) to catch brief motion
 settled_time = 0.5  # Wait 0.5s after motion stops before detecting dart
 
 [dart_detection]
-diff_threshold = 5  # Very low - compensate for overexposed cameras (macOS can't control exposure)
+diff_threshold = 15  # Increased from 5 - was too sensitive, picked up board noise
 blur_kernel = 3  # Smaller blur to preserve dart details
 min_dart_area = 50  # Lower minimum (dart might be small)
 max_dart_area = 10000  # Increased - dart with flight can be large
