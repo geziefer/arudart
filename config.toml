@@ -27,13 +27,17 @@ fourcc = "MJPG"
 # Automatically detects platform and uses appropriate tool
 [camera_control]
 enabled = true
-# exposure_time_ms: Fixed exposure time in milliseconds (e.g. 3ms = 3000µs)
-# Lower = darker, higher = brighter
-# Typical range: 1-10ms (adjust per camera based on lighting)
+# Fixed settings for all cameras:
+# - auto_exposure = false (manual mode)
+# - brightness = -64 (darkest)
+# Per-camera tunable settings:
+# - exposure_time_ms: Fixed exposure time in milliseconds (e.g. 3.7ms = 3700µs)
+# - contrast: Image contrast (typically 10-50)
+# - gamma: Gamma correction (typically 100-400)
 [camera_control.per_camera]
-cam0 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
-cam1 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
-cam2 = { exposure_time_ms = 1, auto_exposure = false, auto_white_balance = false, auto_focus = false }
+cam0 = { exposure_time_ms = 3.7, contrast = 30, gamma = 250 }
+cam1 = { exposure_time_ms = 3.2, contrast = 30, gamma = 200 }
+cam2 = { exposure_time_ms = 3.5, contrast = 30, gamma = 380 }
 
 [motion_detection]
 downscale_factor = 4

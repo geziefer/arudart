@@ -90,6 +90,8 @@ class CameraManager:
                     apply_camera_settings(
                         device_index=camera_id,
                         exposure_time_ms=control_config.get('exposure_time_ms', 3),
+                        contrast=control_config.get('contrast', 30),
+                        gamma=control_config.get('gamma', 200),
                         auto_exposure=control_config.get('auto_exposure', False),
                         auto_white_balance=control_config.get('auto_white_balance', False),
                         auto_focus=control_config.get('auto_focus', False)
