@@ -12,7 +12,8 @@
     "file://project.md",
     "file://IMPLEMENTATION_PLAN.md",
     "file://TESTING_PLAN.md",
-    "file://DEVELOPMENT_KNOWLEDGE.md"
+    "file://DEVELOPMENT_KNOWLEDGE.md",
+    "file://LESSONS_LEARNED.md"
   ],
   "hooks": {},
   "toolsSettings": {

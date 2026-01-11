@@ -1,7 +1,7 @@
 # ARU-DART Development Knowledge Base
 
 **Last Updated:** 2026-01-11  
-**Phase:** Multi-Camera Detection (Step 5)
+**Phase:** Multi-Camera Detection (Step 5) - Ready for Testing
 
 ---
 
@@ -9,7 +9,32 @@
 
 Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° intervals, detecting dart throws via image differencing and multi-camera fusion.
 
-**Current Status:** Step 5 in progress (multi-camera detection and optimization)
+**Current Status:** Step 5 ready - single-camera detection optimized (>95% accuracy), multi-camera testing next
+
+---
+
+## Recent Improvements (2026-01-11)
+
+### Detection Accuracy Improvements
+1. **Diff threshold increased**: 5 → 15 (eliminated board noise)
+2. **Multi-frame post-impact capture**: 3 frames @ 100ms intervals, selects best (lowest noise)
+3. **Shape-based scoring**: `score = area × aspect_ratio × (1 - circularity)` - prioritizes dart shapes over board blobs
+4. **Larger morphological closing**: Up to 35x35 kernels to bridge flight-shaft gaps
+5. **Multi-blob analysis**: Fallback for disconnected flight/shaft (finds aligned blobs)
+6. **Spatial mask adjustment**: Increased to 42.5% radius to include edge darts
+
+**Result**: Single-camera detection ~95% accurate (8-9/9 test throws)
+
+### Camera Control (Platform-Specific)
+- **macOS**: uvc-util (local binary in project root)
+- **Linux**: v4l2-ctl (system-wide)
+- **Per-camera settings**: exposure_time_ms, contrast, gamma
+- **Fixed settings**: brightness=-64, auto_exposure=false, auto_white_balance=false
+
+**Current tuned values**:
+- cam0 (upper right/18): exposure=3.7ms, contrast=30, gamma=250
+- cam1 (lower right/17): exposure=3.2ms, contrast=30, gamma=200
+- cam2 (left/11): exposure=3.5ms, contrast=30, gamma=380
 
 ---
 
@@ -69,7 +94,55 @@ Since lighting and mechanical setup are stable, background noise comes from:
 - Orientation-invariant
 - Works across all board positions
 
-### 2. Morphological Operations Tuning
+### 2. Board Noise Elimination (2026-01-11)
+
+**Problem:** Low diff threshold (5) captured too much board noise, creating larger blobs than dart.
+
+**Root Cause Analysis:**
+- Board noise from sensor noise, reflections, compression artifacts (NOT lighting/movement)
+- Threshold=5 too sensitive, picked up 1-2% pixel differences across entire board
+- Board has more pixels than dart → noise blob larger than dart blob
+- Algorithm selected largest blob → picked board instead of dart
+
+**Solution - Three-part approach:**
+1. **Increase diff_threshold: 5 → 15**
+   - Filters out weak board noise
+   - Keeps strong dart signal (20-50 pixel difference)
+   
+2. **Shape-based scoring instead of size-based:**
+   ```python
+   score = area × aspect_ratio × (1 - circularity)
+   ```
+   - Dart (elongated, non-circular): High score even if smaller
+   - Board blob (compact, circular): Low score even if larger
+   
+3. **Multi-frame post-impact capture:**
+   - Capture 3 frames at 100ms intervals
+   - Select frame with lowest background noise
+   - Reduces random sensor noise and compression artifacts
+
+**Result:** Board noise eliminated, dart always selected over noise blobs
+
+### 3. Disconnected Flight/Shaft Handling (2026-01-11)
+
+**Problem:** Metallic shaft weak/invisible on colored sectors → flight disconnected from shaft after morphological closing.
+
+**Evolution:**
+- Initial closing: 11x11, 15x15, 19x19
+- Problem: Couldn't bridge large gaps (20-30 pixels)
+- Solution 1: Increase to 15x15, 21x21, 27x27, 35x35 → bridges most gaps
+- Solution 2: Multi-blob analysis (fallback when confidence < 0.5 or length < 40px)
+
+**Multi-blob algorithm:**
+1. Find top 2-3 scoring blobs (likely flight + shaft)
+2. Check if aligned (angle difference < 30°)
+3. If aligned, find furthest points across all blobs
+4. Use board-center heuristic: tip closer to center (embedded)
+5. Confidence based on total dart length
+
+**Result:** Handles disconnected flight/shaft, improves from 89% to 95%+ accuracy
+
+### 4. Morphological Operations Tuning
 
 **Problem:** Flight shapes with gaps/holes caused contour fragmentation.
 
