@@ -68,14 +68,18 @@ class DartDetector:
         
         # Use progressively larger kernels for closing to bridge gaps and fill flight interior
         # This handles flights with irregular shapes, gaps, or holes
-        kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_medium)  # Fill medium gaps
+        # Increased kernel sizes to bridge larger gaps between flight and shaft
+        kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_medium)
         
-        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)  # Fill large gaps in flight
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)
         
-        kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)  # Connect fragmented flight pieces
+        kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (27, 27))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)
+        
+        kernel_xxlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (35, 35))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xxlarge)  # Bridge large gaps between flight and shaft
         
         # Create spatial mask on first use (exclude outer numbers only)
         if self.board_mask is None:
@@ -83,8 +87,9 @@ class DartDetector:
             center = (w // 2, h // 2)
             # Create mask: white = valid area, black = excluded
             self.board_mask = np.zeros((h, w), dtype=np.uint8)
-            # Valid area: inside the double ring (approximately 85% of image radius)
-            valid_radius = int(min(w, h) * 0.42)  # 84% of half-width
+            # Valid area: include entire board except far outer edge (numbers)
+            # Use 85% of image radius to include all scoring areas
+            valid_radius = int(min(w, h) * 0.425)  # 85% of half-width
             cv2.circle(self.board_mask, center, valid_radius, 255, -1)
             # Bull is included (no inner exclusion)
             self.logger.info(f"Created board mask: valid_radius={valid_radius} (excludes outer numbers only)")
@@ -178,6 +183,19 @@ class DartDetector:
         # Fit line to contour to find orientation
         tip_x, tip_y, confidence = self._find_tip(dart['contour'], thresh, post_frame.shape)
         
+        # If confidence is low or contour is suspiciously short, try multi-blob analysis
+        # This handles cases where flight and shaft are disconnected
+        x, y, w, h = dart['bbox']
+        dart_length = max(w, h)
+        
+        if confidence < 0.5 or dart_length < 40:  # Low confidence or very short dart
+            self.logger.info(f"Low confidence ({confidence:.2f}) or short dart ({dart_length}px), trying multi-blob analysis...")
+            multi_tip_x, multi_tip_y, multi_conf = self._multi_blob_analysis(dart_candidates, thresh)
+            
+            if multi_conf > confidence:
+                self.logger.info(f"Multi-blob analysis improved confidence: {confidence:.2f} -> {multi_conf:.2f}")
+                tip_x, tip_y, confidence = multi_tip_x, multi_tip_y, multi_conf
+        
         # Add detected dart to previous darts mask (for multi-dart scenarios)
         if mask_previous:
             self._add_to_previous_darts_mask(dart['contour'], thresh.shape)
@@ -192,6 +210,83 @@ class DartDetector:
         }
         
         return tip_x, tip_y, confidence, debug_info
+    
+    def _multi_blob_analysis(self, candidates, thresh):
+        """Analyze multiple blobs to find aligned dart parts (flight + shaft).
+        
+        Returns tip coordinates and confidence if successful, otherwise (None, None, 0.0).
+        """
+        if len(candidates) < 2:
+            return None, None, 0.0
+        
+        # Sort by score (best first)
+        sorted_candidates = sorted(candidates, key=lambda c: c['score'], reverse=True)
+        
+        # Take top 2-3 candidates (likely flight + shaft)
+        top_blobs = sorted_candidates[:min(3, len(sorted_candidates))]
+        
+        # Find centroids and orientations
+        blob_info = []
+        for blob in top_blobs:
+            M = cv2.moments(blob['contour'])
+            if M['m00'] == 0:
+                continue
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+            
+            # Fit line to get orientation
+            [vx, vy, x0, y0] = cv2.fitLine(blob['contour'], cv2.DIST_L2, 0, 0.01, 0.01)
+            angle = np.arctan2(vy, vx) * 180 / np.pi
+            
+            blob_info.append({
+                'centroid': (cx, cy),
+                'angle': angle,
+                'contour': blob['contour'],
+                'bbox': blob['bbox']
+            })
+        
+        # Check if blobs are aligned (similar orientation)
+        if len(blob_info) >= 2:
+            angle_diff = abs(blob_info[0]['angle'] - blob_info[1]['angle'])
+            if angle_diff > 180:
+                angle_diff = 360 - angle_diff
+            
+            if angle_diff < 30:  # Aligned within 30 degrees
+                # Find furthest points from both blobs
+                all_points = np.vstack([b['contour'].reshape(-1, 2) for b in blob_info])
+                
+                # Find two furthest points (likely tip and flight end)
+                max_dist = 0
+                tip_point = None
+                far_point = None
+                
+                for i, p1 in enumerate(all_points):
+                    for p2 in all_points[i+1:]:
+                        dist = np.linalg.norm(p1 - p2)
+                        if dist > max_dist:
+                            max_dist = dist
+                            tip_point = p1
+                            far_point = p2
+                
+                if tip_point is not None:
+                    # Determine which end is tip (use board center heuristic)
+                    h, w = thresh.shape
+                    center = np.array([w/2, h/2])
+                    
+                    dist1 = np.linalg.norm(tip_point - center)
+                    dist2 = np.linalg.norm(far_point - center)
+                    
+                    # Tip is closer to center (embedded in board)
+                    if dist1 < dist2:
+                        tip_x, tip_y = int(tip_point[0]), int(tip_point[1])
+                    else:
+                        tip_x, tip_y = int(far_point[0]), int(far_point[1])
+                    
+                    confidence = min(max_dist / 100.0, 1.0)  # Longer dart = higher confidence
+                    self.logger.info(f"Multi-blob: found aligned blobs (angle_diff={angle_diff:.1f}°, length={max_dist:.0f}px)")
+                    return tip_x, tip_y, confidence
+        
+        return None, None, 0.0
     
     def _add_to_previous_darts_mask(self, contour, image_shape):
         """Add detected dart contour to the mask of previous darts."""

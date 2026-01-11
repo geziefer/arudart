@@ -195,7 +195,8 @@ def main():
                     if motion_state == "idle" and current_time - last_detection_time < detection_cooldown:
                         continue  # Skip this detection, too soon after last one
                     
-                    if motion_state == "idle":  # Only log and update state if coming from idle
+                    # Capture multiple post-impact frames for noise reduction
+                    if motion_state == "idle":  # First detection after idle
                         motion_state = "dart_detected"
                         last_detection_time = current_time
                         logger.info(f"=== DART THROW DETECTED ===")
@@ -203,20 +204,20 @@ def main():
                         for cam_id, (detected, amount) in per_camera_motion.items():
                             if detected:
                                 logger.info(f"  Camera {cam_id}: {amount:.2f}%")
-                        
-                        # Capture multiple post-impact frames for noise reduction
-                        logger.info("Capturing multiple post-impact frames...")
-                        num_post_frames = 3
-                        post_frame_interval = 0.1  # 100ms between frames
-                        
-                        for i in range(num_post_frames):
-                            if i > 0:
-                                time.sleep(post_frame_interval)
-                            # Get current frames
-                            for camera_id in camera_ids:
-                                frame = camera_manager.get_latest_frame(camera_id)
-                                if frame is not None:
-                                    background_model.add_post_impact_candidate(camera_id, frame)
+                    
+                    # Always capture post frames (for both automatic and manual test mode)
+                    logger.info("Capturing multiple post-impact frames...")
+                    num_post_frames = 3
+                    post_frame_interval = 0.1  # 100ms between frames
+                    
+                    for i in range(num_post_frames):
+                        if i > 0:
+                            time.sleep(post_frame_interval)
+                        # Get current frames
+                        for camera_id in camera_ids:
+                            frame = camera_manager.get_latest_frame(camera_id)
+                            if frame is not None:
+                                background_model.add_post_impact_candidate(camera_id, frame)
                     
                     # Run detection on all cameras
                     throw_count += 1
