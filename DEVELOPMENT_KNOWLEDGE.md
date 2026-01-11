@@ -196,40 +196,45 @@ camera_manager.reapply_camera_settings()
 ### Camera Settings
 ```toml
 [camera_settings]
-width = 1280
-height = 720
+width = 800
+height = 600
 fps = 25
 fourcc = "MJPG"
-exposure = -7              # Lowered from -6 for better metallic dart contrast
-auto_exposure = false
-auto_wb = false
-wb_temperature = 4000
-autofocus = false
-gain = 0
+
+[camera_control]
+enabled = true
+[camera_control.per_camera]
+cam0 = { exposure_time_ms = 3.7, contrast = 30, gamma = 250 }
+cam1 = { exposure_time_ms = 3.2, contrast = 30, gamma = 200 }
+cam2 = { exposure_time_ms = 3.5, contrast = 30, gamma = 380 }
 ```
 
 ### Motion Detection
 ```toml
 [motion_detection]
-scale = 4                  # Downscale factor for motion detection
-blur_kernel = 5
-motion_threshold = 5.0
+downscale_factor = 4       # Downscale factor for motion detection
+motion_threshold = 15
+blur_kernel = 21
 settled_threshold = 1.0    # Lowered from 2.0 to detect stuck darts
 motion_check_interval = 0.05
-persistence_time = 0.3     # Persistent change detection
-learning_rate = 0.01       # Adaptive background update when idle
+settled_time = 0.5
 ```
 
 ### Dart Detection
 ```toml
 [dart_detection]
-diff_threshold = 15
-blur_kernel = 5
+diff_threshold = 15        # High threshold (try first)
+blur_kernel = 3
 min_dart_area = 50
 max_dart_area = 10000
 min_shaft_length = 15
 aspect_ratio_min = 1.2
-detection_cooldown = 2.0
+
+# Two-step threshold approach: try high (15) first, fallback to low (8) if nothing found
+[dart_detection.per_camera]
+cam0 = { diff_threshold = 8 }  # Low threshold fallback
+cam1 = { diff_threshold = 8 }  # Low threshold fallback
+cam2 = { diff_threshold = 8 }  # Low threshold fallback
 ```
 
 **Shape Filters:**
@@ -240,7 +245,12 @@ detection_cooldown = 2.0
 **Spatial Mask:**
 - Exclude outer 15% (number ring)
 - Include all scoring area including bull
-- Valid radius = 42% of image half-width
+- Valid radius = 42.5% of image half-width
+
+**Two-Step Threshold Approach:**
+1. Try high threshold (15) first - clean detection for strong signals
+2. If nothing found, retry with low threshold (8) - catch weak signals from distant/angled darts
+3. **Important:** camera_id must be passed as string format ('cam0', 'cam1', 'cam2') for config lookup
 
 ---
 
@@ -295,7 +305,29 @@ else:
 - `persistence_time = 0.3s` (dart stays, hand moves away)
 - `settled_threshold = 1.0%` (lower than transient motion)
 
-### 2. Morphological Processing Pipeline
+### 2. Two-Step Threshold Approach (Multi-Camera)
+
+**Purpose:** Balance clean detection (avoid noise) with sensitivity (catch weak signals)
+
+```python
+# Step 1: Try high threshold first
+tip_x, tip_y, confidence, debug_info = detect_with_threshold(pre, post, threshold=15)
+
+# Step 2: If nothing found, retry with low threshold
+if tip_x is None:
+    low_threshold = per_camera_thresholds.get(camera_id, 15)  # e.g., 8
+    if low_threshold < 15:
+        tip_x, tip_y, confidence, debug_info = detect_with_threshold(pre, post, threshold=low_threshold)
+```
+
+**Why it works:**
+- Close-up darts: Strong signal (20-50 pixel diff) → detected at threshold=15
+- Distant/angled darts: Weak signal (5-10 pixel diff) → detected at threshold=8
+- Avoids noise: High threshold tried first, low threshold only as fallback
+
+**Critical:** camera_id must be string format ('cam0', 'cam1', 'cam2') for config lookup
+
+### 3. Morphological Processing Pipeline
 
 ```python
 # 1. Combine diff and edges
@@ -306,17 +338,20 @@ kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_small)
 
 # 3. Fill gaps progressively (connect flight fragments)
-kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
 thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_medium)
 
-kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
 thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_large)
 
-kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))
+kernel_xlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (27, 27))
 thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xlarge)
+
+kernel_xxlarge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (35, 35))
+thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_xxlarge)
 ```
 
-### 3. Tip Identification (Widest Part Algorithm)
+### 4. Tip Identification (Widest Part Algorithm)
 
 ```python
 # Divide dart into segments along fitted line
@@ -343,7 +378,32 @@ else:
 confidence = min(max_width / 20.0, 1.0)
 ```
 
-### 4. Previous Dart Masking
+### 5. Edge Proximity Heuristic (Flight Outside Frame)
+
+**Purpose:** Detect tip when flight is outside camera view
+
+```python
+# If confidence is low and one end is near image edge
+if confidence < 0.3:
+    edge_margin = 50  # pixels from edge
+    
+    dist1_to_edge = min(end1[0], end1[1], w - end1[0], h - end1[1])
+    dist2_to_edge = min(end2[0], end2[1], w - end2[0], h - end2[1])
+    
+    if dist1_to_edge < edge_margin and dist2_to_edge > edge_margin:
+        tip = end2  # end1 near edge (flight outside), end2 is tip
+        confidence = 0.4
+    elif dist2_to_edge < edge_margin and dist1_to_edge > edge_margin:
+        tip = end1  # end2 near edge (flight outside), end1 is tip
+        confidence = 0.4
+```
+
+**Why it works:**
+- Flight often extends outside frame for distant/angled cameras
+- End near edge = flight side (outside frame)
+- Opposite end = tip (embedded in board)
+
+### 6. Previous Dart Masking
 
 ```python
 # After successful detection:
