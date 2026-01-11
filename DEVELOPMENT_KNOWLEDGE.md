@@ -1,7 +1,7 @@
 # ARU-DART Development Knowledge Base
 
-**Last Updated:** 2026-01-03  
-**Phase:** Single-Camera Detection POC Complete
+**Last Updated:** 2026-01-11  
+**Phase:** Multi-Camera Detection (Step 5)
 
 ---
 
@@ -9,7 +9,37 @@
 
 Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° intervals, detecting dart throws via image differencing and multi-camera fusion.
 
-**Current Status:** Step 4 complete (single-camera detection), ready for Step 5 (multi-camera)
+**Current Status:** Step 5 in progress (multi-camera detection and optimization)
+
+---
+
+## Hardware Setup - Stability Characteristics
+
+### Lighting System
+- **LED ring**: Provides stable, even illumination without shadows
+- **Room lighting**: Stable ambient light (no changes during tests)
+- **Window light**: Only varies on sunny+cloudy days (rare, not in tests so far)
+- **Conclusion**: Lighting is stable and NOT a source of background noise
+
+### Mechanical Stability
+- **Board**: Fixed to wall (does not move)
+- **Cameras**: Fixed to LED ring (does not move)
+- **Vibrations**: Possible tiny vibrations from:
+  - Dart impact on board
+  - Manual dart extraction
+  - Accidental camera touch (operator waits for settling)
+- **Conclusion**: Setup is mechanically stable, vibrations are minimal and transient
+
+### Sources of Background Noise in Diff Images
+Since lighting and mechanical setup are stable, background noise comes from:
+
+1. **Camera sensor noise**: Random pixel variations (thermal noise, read noise)
+2. **Dart reflections**: Metallic barrel and flight material create specular reflections that change with viewing angle
+3. **Micro-shadows**: Very thin shadows from dart shaft/flight on board surface
+4. **Compression artifacts**: MJPEG compression introduces slight variations between frames
+5. **Camera auto-adjustments**: Despite disabling, some cameras may drift slightly
+
+**Key insight**: Noise is NOT from environmental instability, but from sensor/optical characteristics and dart material properties.
 
 ---
 

@@ -203,6 +203,20 @@ def main():
                         for cam_id, (detected, amount) in per_camera_motion.items():
                             if detected:
                                 logger.info(f"  Camera {cam_id}: {amount:.2f}%")
+                        
+                        # Capture multiple post-impact frames for noise reduction
+                        logger.info("Capturing multiple post-impact frames...")
+                        num_post_frames = 3
+                        post_frame_interval = 0.1  # 100ms between frames
+                        
+                        for i in range(num_post_frames):
+                            if i > 0:
+                                time.sleep(post_frame_interval)
+                            # Get current frames
+                            for camera_id in camera_ids:
+                                frame = camera_manager.get_latest_frame(camera_id)
+                                if frame is not None:
+                                    background_model.add_post_impact_candidate(camera_id, frame)
                     
                     # Run detection on all cameras
                     throw_count += 1
@@ -212,9 +226,13 @@ def main():
                     
                     detections = {}
                     for camera_id in camera_ids:
-                        if background_model.has_pre_impact(camera_id) and camera_id in frames:
+                        if background_model.has_pre_impact(camera_id):
                             pre_frame = background_model.get_pre_impact(camera_id)
-                            post_frame = frames[camera_id]
+                            post_frame = background_model.get_best_post_impact(camera_id)
+                            
+                            if post_frame is None:
+                                logger.warning(f"No post frame available for camera {camera_id}")
+                                continue
                             
                             tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
                             
