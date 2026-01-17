@@ -188,12 +188,13 @@ class DartDetector:
         x, y, w, h = dart['bbox']
         dart_length = max(w, h)
         
-        if confidence < 0.5 or dart_length < 40:  # Low confidence or very short dart
-            self.logger.info(f"Low confidence ({confidence:.2f}) or short dart ({dart_length}px), trying multi-blob analysis...")
+        # Always try multi-blob if we have multiple candidates (disconnected flight/shaft)
+        if len(dart_candidates) > 1 and (confidence < 0.5 or dart_length < 60):
+            self.logger.info(f"Multiple candidates ({len(dart_candidates)}), confidence={confidence:.2f}, length={dart_length}px - trying multi-blob analysis...")
             multi_tip_x, multi_tip_y, multi_conf = self._multi_blob_analysis(dart_candidates, thresh)
             
-            if multi_conf > confidence:
-                self.logger.info(f"Multi-blob analysis improved confidence: {confidence:.2f} -> {multi_conf:.2f}")
+            if multi_tip_x is not None and multi_conf > confidence:
+                self.logger.info(f"Multi-blob analysis improved: {confidence:.2f} -> {multi_conf:.2f}")
                 tip_x, tip_y, confidence = multi_tip_x, multi_tip_y, multi_conf
         
         # Add detected dart to previous darts mask (for multi-dart scenarios)
@@ -247,7 +248,7 @@ class DartDetector:
         
         # Check if blobs are aligned (similar orientation)
         if len(blob_info) >= 2:
-            angle_diff = abs(blob_info[0]['angle'] - blob_info[1]['angle'])
+            angle_diff = float(abs(blob_info[0]['angle'] - blob_info[1]['angle']))
             if angle_diff > 180:
                 angle_diff = 360 - angle_diff
             
@@ -269,21 +270,14 @@ class DartDetector:
                             far_point = p2
                 
                 if tip_point is not None:
-                    # Determine which end is tip (use board center heuristic)
-                    h, w = thresh.shape
-                    center = np.array([w/2, h/2])
-                    
-                    dist1 = np.linalg.norm(tip_point - center)
-                    dist2 = np.linalg.norm(far_point - center)
-                    
-                    # Tip is closer to center (embedded in board)
-                    if dist1 < dist2:
+                    # Use Y-coordinate heuristic: tip has larger Y (embedded in board)
+                    if tip_point[1] > far_point[1]:  # tip_point has larger Y
                         tip_x, tip_y = int(tip_point[0]), int(tip_point[1])
-                    else:
+                    else:  # far_point has larger Y
                         tip_x, tip_y = int(far_point[0]), int(far_point[1])
                     
-                    confidence = min(max_dist / 100.0, 1.0)  # Longer dart = higher confidence
-                    self.logger.info(f"Multi-blob: found aligned blobs (angle_diff={angle_diff:.1f}°, length={max_dist:.0f}px)")
+                    confidence = min(max_dist / 100.0, 1.0)
+                    self.logger.info(f"Multi-blob: aligned blobs (angle_diff={angle_diff:.1f}°, length={max_dist:.0f}px), Y-coordinate heuristic")
                     return tip_x, tip_y, confidence
         
         return None, None, 0.0
@@ -310,9 +304,10 @@ class DartDetector:
     
     def _find_tip(self, contour, thresh_image, image_shape):
         """
-        Find dart tip by identifying the flight (widest part) and taking the opposite end.
-        Flight = widest, most bulky part
-        Tip = opposite end from flight
+        Find dart tip using Y-coordinate heuristic (primary) and widest-part (fallback).
+        
+        Primary: Tip has larger Y coordinate than flight (tip embedded, flight sticks out)
+        Fallback: Widest part = flight, opposite end = tip
         """
         # Fit line to contour
         [vx, vy, x0, y0] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -330,48 +325,21 @@ class DartDetector:
         t_max = max(t_values)
         t_values = np.array(t_values)
         
-        # Find the widest part of the dart (the flight)
-        # Divide dart into segments and measure width of each
-        dart_length = t_max - t_min
-        num_segments = 10
-        segment_size = dart_length / num_segments
-        
-        max_width = 0
-        flight_position = 0  # 0 = near end1, 1 = near end2
-        
-        for i in range(num_segments):
-            segment_start = t_min + i * segment_size
-            segment_end = segment_start + segment_size
-            segment_mask = (t_values >= segment_start) & (t_values < segment_end)
-            
-            if np.sum(segment_mask) < 2:
-                continue
-            
-            # Index using the 1D mask (contour_points is Nx2, mask is N)
-            segment_points = contour_points[segment_mask.flatten()]
-            # Width = standard deviation of points in this segment
-            width = np.std(segment_points, axis=0).mean()
-            
-            if width > max_width:
-                max_width = width
-                flight_position = i / num_segments  # 0 to 1
-        
         # Calculate endpoints
         end1 = (int(x0 + t_min * vx), int(y0 + t_min * vy))
         end2 = (int(x0 + t_max * vx), int(y0 + t_max * vy))
         
-        # Tip is the end opposite to the flight
-        if flight_position < 0.5:
-            # Flight is near end1, so tip is end2
-            tip = end2
-        else:
-            # Flight is near end2, so tip is end1
+        # PRIMARY METHOD: Y-coordinate heuristic
+        # Tip has larger Y (lower in image, embedded in board)
+        # Flight has smaller Y (higher in image, sticks out from board)
+        if end1[1] > end2[1]:  # end1 has larger Y
             tip = end1
-        
-        # Confidence based on how distinct the flight is
-        confidence = min(max_width / 20.0, 1.0)  # Normalize by expected flight width
-        
-        self.logger.debug(f"Flight at position {flight_position:.2f}, max_width={max_width:.1f}, tip at {tip}")
+            confidence = 0.8  # High confidence for Y-coordinate method
+            self.logger.debug(f"Y-coordinate: end1_y={end1[1]} > end2_y={end2[1]}, tip=end1")
+        else:  # end2 has larger Y
+            tip = end2
+            confidence = 0.8
+            self.logger.debug(f"Y-coordinate: end2_y={end2[1]} > end1_y={end1[1]}, tip=end2")
         
         return tip[0], tip[1], confidence
     

@@ -74,12 +74,29 @@ Since lighting and mechanical setup are stable, background noise comes from:
 
 **Problem:** Initial approach (compare endpoint widths) failed when tip was embedded in board.
 
-**Failed Approaches:**
-- Endpoint width comparison: Unreliable when tip embedded (compares flight vs barrel, not tip)
-- Distance to center heuristic: Fails for bottom-third of board (flight closer to center than tip)
-- Endpoint strength analysis: Couldn't distinguish embedded tip from visible barrel end
+**❌ FAILED APPROACHES - NEVER USE THESE AGAIN:**
+1. **Board-center heuristic (tip closer to center):**
+   - **DOES NOT WORK** - Which end is closer to center depends on dart position on board
+   - **Example:** Dart in lower half of board → tip closer to outer edge than center
+   - **Example:** Dart in upper half of board → tip closer to center than outer edge
+   - **Conclusion:** Position-dependent, cannot be used as general rule
+   - **DO NOT SUGGEST THIS APPROACH EVER AGAIN**
 
-**Final Solution (Working):**
+2. **Endpoint width comparison:**
+   - Unreliable when tip embedded (compares flight vs barrel, not tip)
+
+3. **Endpoint strength analysis:**
+   - Couldn't distinguish embedded tip from visible barrel end
+
+**✅ WORKING SOLUTION - Y-COORDINATE HEURISTIC (PRIMARY):**
+- **Physical fact:** Darts stick straight into board or bend slightly, flight always sticks OUT from board
+- **Camera perspective:** Flight is farther from board surface (lower Y in image), tip is embedded (higher Y in image)
+- **Rule:** Tip ALWAYS has larger Y coordinate than flight in camera image
+- **Exception:** Only fails if dart points directly at camera (physically impossible in real throws)
+- **Reliability:** Works across all camera angles and dart positions
+- **Priority:** Use Y-coordinate as PRIMARY method, widest-part as fallback
+
+**Fallback: Widest-part algorithm:**
 - Find widest part of dart contour (always the flight, always visible)
 - Take opposite end as tip
 - Divide dart into 10 segments, measure width of each
@@ -497,12 +514,91 @@ thresh = cv2.bitwise_and(thresh, thresh, mask=cv2.bitwise_not(previous_darts_mas
 
 ---
 
-## Next Steps (Step 5-7)
+## Multi-Camera Detection Results (Step 5)
 
-### Step 5: Multi-Camera Capture
-- Extend to 3 cameras simultaneously
-- Synchronize frame capture
-- Per-camera detection
+### Test Case 7: Multi-Camera Detection (TC7)
+
+**Status:** ✅ COMPLETE  
+**Completed:** 2026-01-17  
+**Overall Performance:** 7/12 successful detections (58%)
+
+| Test | Cam0 | Cam1 | Cam2 | Success Rate |
+|------|------|------|------|--------------|
+| 7.1 Bull | ✅ | ✅ | ❌ | 2/3 (67%) |
+| 7.2 S18 | ✅ | ✅ | ✅ | 3/3 (100%) |
+| 7.3 S17 | ❌ | ✅ | ❌ | 1/3 (33%) |
+| 7.4 S11 | ✅ | ❌ | ✅ | 2/3 (67%) |
+
+**Key Metrics:**
+- At least 1 camera detected: 4/4 throws (100%)
+- At least 2 cameras detected: 3/4 throws (75%)
+- All 3 cameras detected: 1/4 throws (25%)
+
+### Camera Blind Spots (Geometric Limitations)
+
+**Root Cause:** 120° camera spacing creates viewing angles where dart appears edge-on
+
+**Per-Camera Blind Spots:**
+- **Cam0 (upper right/18):** Blind to darts near cam1 position (sector 17)
+- **Cam1 (lower right/17):** Blind to darts near cam2 position (sector 11)
+- **Cam2 (left/11):** Blind to darts near cam0 position (sector 18)
+
+**Why This Happens:**
+- Dart close to camera A → excellent detection (close-up view)
+- Dart close to camera A → cameras B/C see it edge-on (minimal visible area)
+- Edge-on view: shaft nearly parallel to camera, flight may be outside frame
+
+**Examples from TC7:**
+- TC7.3 (S17 near cam1): Cam1 ✅, Cam0 ❌, Cam2 ❌ (edge-on from opposite cameras)
+- TC7.4 (S11 near cam2): Cam2 ✅, Cam0 ✅, Cam1 ❌ (flight outside frame)
+
+**Conclusion:** This is expected behavior, not an algorithm failure. Multi-camera fusion (Step 7) will handle this by using detections from cameras with clear view.
+
+### Multi-Camera Detection Patterns
+
+**Pattern 1: Optimal (all cameras see dart clearly)**
+- Example: TC7.2 (S18) - 3/3 detection
+- Dart position: Not too close to any camera
+- All cameras have oblique but clear view
+
+**Pattern 2: Close-up dominant (one camera very close)**
+- Example: TC7.3 (S17) - 1/3 detection
+- Close camera: Excellent detection
+- Opposite cameras: Blind (edge-on view)
+- Fusion strategy: Use close camera only
+
+**Pattern 3: Partial occlusion (flight outside frame)**
+- Example: TC7.4 cam1 - wrong tip detection
+- Only shaft visible, flight outside frame
+- Algorithm fails: "widest part = flight" doesn't work
+- Needs: Edge proximity heuristic improvement
+
+**Pattern 4: Close-up distortion (large irregular blob)**
+- Example: TC7.4 cam2 - correct but strange shape
+- Close-up captures entire dart + shadows
+- Morphological closing creates bulky contour
+- Not a problem: Tip location still correct
+
+### Algorithm Limitations Discovered
+
+**1. Edge Proximity Heuristic Insufficient:**
+- Current threshold: confidence < 0.3 to trigger
+- TC7.4 cam1: Flight outside frame, but confidence 0.15 didn't help
+- **Fix needed:** Check edge proximity even at moderate confidence (< 0.5)
+
+**2. Two-Step Threshold Can't Fix Geometry:**
+- TC7.3 cam0/cam2: Even threshold=8 finds nothing
+- Dart genuinely invisible from extreme angles
+- **Conclusion:** Threshold tuning has limits, fusion is the solution
+
+**3. Widest-Part Algorithm Requires Flight Visible:**
+- Works excellently when flight in frame (95%+ accuracy in TC0-TC6)
+- Fails when flight outside frame (TC7.4 cam1)
+- **Fallback needed:** Better edge proximity logic
+
+---
+
+## Next Steps (Step 6-7)
 
 ### Step 6: Camera Calibration
 - Intrinsic calibration (camera matrix, distortion)

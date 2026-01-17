@@ -93,17 +93,21 @@ def main():
         settled_threshold=motion_config['settled_threshold']
     )
     
-    # Initialize background model and dart detector
+    # Initialize background model and per-camera dart detectors
     background_model = BackgroundModel()
     dart_config = config['dart_detection']
-    dart_detector = DartDetector(
-        diff_threshold=dart_config['diff_threshold'],
-        blur_kernel=dart_config['blur_kernel'],
-        min_dart_area=dart_config['min_dart_area'],
-        max_dart_area=dart_config['max_dart_area'],
-        min_shaft_length=dart_config['min_shaft_length'],
-        aspect_ratio_min=dart_config['aspect_ratio_min']
-    )
+    
+    # Create separate detector instance for each camera (each maintains its own previous_darts_mask)
+    dart_detectors = {}
+    for cam_id in camera_ids:
+        dart_detectors[cam_id] = DartDetector(
+            diff_threshold=dart_config['diff_threshold'],
+            blur_kernel=dart_config['blur_kernel'],
+            min_dart_area=dart_config['min_dart_area'],
+            max_dart_area=dart_config['max_dart_area'],
+            min_shaft_length=dart_config['min_shaft_length'],
+            aspect_ratio_min=dart_config['aspect_ratio_min']
+        )
     
     # FPS counters per camera (use filtered camera_ids from above)
     fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
@@ -235,7 +239,7 @@ def main():
                                 logger.warning(f"No post frame available for camera {camera_id}")
                                 continue
                             
-                            tip_x, tip_y, confidence, debug_info = dart_detector.detect(pre_frame, post_frame)
+                            tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(pre_frame, post_frame)
                             
                             detections[camera_id] = {
                                 'tip_x': tip_x,
@@ -281,10 +285,12 @@ def main():
                     logger.info(f"Saved images to {throw_dir}")
                     
                     # Update background to include this dart for next throw
+                    # Use post-impact frame (with dart) as new pre-impact for next detection
                     for camera_id in camera_ids:
-                        if camera_id in frames:
-                            motion_detector.update_background(camera_id, frames[camera_id])
-                            background_model.update_pre_impact(camera_id, frames[camera_id])
+                        post_frame = background_model.get_best_post_impact(camera_id)
+                        if post_frame is not None:
+                            motion_detector.update_background(camera_id, post_frame)
+                            background_model.update_pre_impact(camera_id, post_frame)
                     logger.info("Background updated to include detected dart")
                     
                     # Reset persistent change tracker to prevent repeated detections
@@ -354,8 +360,9 @@ def main():
                         motion_detector.update_background(camera_id, frame)
                         background_model.update_pre_impact(camera_id, frame)
                     
-                    # Reset previous darts mask when capturing new background
-                    dart_detector.reset_previous_darts()
+                    # Reset previous darts mask for all cameras when capturing new background
+                    for dart_detector in dart_detectors.values():
+                        dart_detector.reset_previous_darts()
                     
                     background_initialized = True
                     last_detection_time = 0  # Reset cooldown
