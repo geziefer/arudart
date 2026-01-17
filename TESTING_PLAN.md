@@ -166,6 +166,30 @@
 
 ---
 
+### Test Case 7.5: Comprehensive Single-Dart Test (Round the Clock)
+**Goal:** Validate Y-coordinate heuristic across all board positions
+
+- [x] 21 throws: one dart in each sector's triple (20 sectors) + bull
+- [x] Verify detection from all 3 cameras simultaneously
+- [x] Test Y-coordinate heuristic across all camera angles
+
+**Status:** ✅ PASSED (Session_001_2026-01-17_19-30-54)
+- 59/63 successful detections (94% overall)
+- At least 2/3 cameras detected: 21/21 throws (100%)
+- Failures: 2 (Throw 15 cam1 no detection, Throw 20 cam2 wrong position)
+- Minor issues: 1 (Throw 21 bull cam1 tip 5-10px offset)
+
+**Key Findings:**
+- **Y-coordinate heuristic validated:** 94% accuracy across all board positions
+- **Multi-camera redundancy works:** 100% coverage with ≥2 cameras
+- **Works "round the clock":** All 20 sectors + bull
+- **Robust to camera angles:** Top, bottom, side views all successful
+- **Single-camera failures acceptable:** Fusion will handle outliers
+
+**Conclusion:** Y-coordinate heuristic is the correct primary method. Single-camera detection robust enough for multi-camera fusion. Ready for Step 6 (Calibration) and Step 7 (Fusion).
+
+---
+
 ### Test Case 8: Camera Synchronization
 **Goal:** Verify all cameras capture frames at the same moment
 

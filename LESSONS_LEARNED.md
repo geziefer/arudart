@@ -257,6 +257,8 @@
 8. **Iterate based on failures** - analyze patterns, adjust systematically
 9. **Noise is optical, not environmental** - stable lighting still has sensor noise
 10. **Manual testing enables precision** - controlled placement beats random throws
+11. **❌ Board-center heuristic DOES NOT WORK** - tip position relative to center depends on dart location on board
+12. **✅ Y-coordinate heuristic is PRIMARY method** - tip always has larger Y than flight (embedded vs sticking out), works across all camera angles except dart pointing at camera (impossible in real throws)
 
 ---
 

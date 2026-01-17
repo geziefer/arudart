@@ -516,6 +516,41 @@ thresh = cv2.bitwise_and(thresh, thresh, mask=cv2.bitwise_not(previous_darts_mas
 
 ## Multi-Camera Detection Results (Step 5)
 
+### Test Case 7.5: Comprehensive Single-Dart Test (Round the Clock)
+
+**Status:** ✅ COMPLETE  
+**Completed:** 2026-01-17  
+**Session:** Session_001_2026-01-17_19-30-54  
+**Test Design:** 21 throws - one dart in each sector's triple (20 sectors) + bull
+
+**Overall Performance:** 59/63 successful detections (94%)
+
+| Metric | Result |
+|--------|--------|
+| Total detections | 63 (21 throws × 3 cameras) |
+| Successful | 59 (94%) |
+| Failures | 2 (3%) |
+| Minor issues | 2 (3%) |
+| **At least 2/3 cameras** | **21/21 (100%)** |
+
+**Failures:**
+- Throw 15 cam1: No detection (shape filtered out, but cam0/cam2 succeeded)
+- Throw 20 cam2: Wrong position (board noise blob, but cam0/cam1 succeeded)
+
+**Minor Issues:**
+- Throw 21 bull cam1: Tip 5-10px outside bull (line fitting inaccuracy on short contour)
+
+**Key Findings:**
+- ✅ Y-coordinate heuristic: 94% accuracy across all board positions
+- ✅ Multi-camera redundancy: 100% coverage (≥2 cameras per throw)
+- ✅ Works "round the clock": All 20 sectors + bull
+- ✅ Robust to camera angles: Top, bottom, side views all work
+- ✅ Ready for fusion: Single-camera failures don't affect system
+
+**Conclusion:** Y-coordinate heuristic validated. Single-camera detection robust enough for multi-camera fusion.
+
+---
+
 ### Test Case 7: Multi-Camera Detection (TC7)
 
 **Status:** ✅ COMPLETE  
