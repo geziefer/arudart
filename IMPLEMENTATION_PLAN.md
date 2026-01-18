@@ -561,6 +561,183 @@ python main.py --dev-mode --manual-test --show-histogram
 
 ---
 
+### ⬜ Step 5.5: Regression Test Dataset
+**Status**: NOT STARTED  
+**Goal**: Create automated regression tests to verify detection quality after code changes
+
+#### Why This Step:
+- Steps 6-7 will modify detection and coordinate mapping code
+- Manual testing takes 20+ minutes per iteration
+- Regression tests run in <10 seconds
+- Catch breaking changes immediately
+- Enable confident refactoring
+
+#### Tasks:
+
+**1. Create Test Dataset Structure:**
+- [ ] Create directory structure:
+  ```
+  data/test_dataset/
+  ├── single_darts/          # 21 test cases (one per sector + bull)
+  │   ├── sector_01_triple/
+  │   │   ├── cam0_pre.jpg
+  │   │   ├── cam0_post.jpg
+  │   │   ├── cam1_pre.jpg
+  │   │   ├── cam1_post.jpg
+  │   │   ├── cam2_pre.jpg
+  │   │   ├── cam2_post.jpg
+  │   │   └── ground_truth.json
+  │   ├── sector_02_triple/
+  │   └── ...
+  ├── multi_darts/           # 5 test cases (TC7.6 scenarios)
+  │   ├── two_darts_separated/
+  │   ├── two_darts_close/
+  │   ├── two_darts_crossing/
+  │   ├── three_darts_cluster/
+  │   └── three_darts_crossing/
+  └── edge_cases/            # Optional: near wires, steep angles
+  ```
+
+**2. Copy Existing Test Sessions:**
+- [ ] Copy TC7.5 session (Session_001_2026-01-17_19-30-54) to `single_darts/`
+  - Extract pre/post images from each throw
+  - Rename to standardized format (cam0_pre.jpg, cam0_post.jpg, etc.)
+- [ ] Copy TC7.6 session (Session_001_2026-01-18_13-17-05) to `multi_darts/`
+  - Extract pre/post images from each throw
+  - Organize by scenario
+
+**3. Generate Ground Truth Files:**
+- [ ] Create script: `tools/generate_ground_truth.py`
+  - Reads existing detection results from logs
+  - Creates `ground_truth.json` for each test case
+  - Format:
+    ```json
+    {
+      "description": "Dart in sector 20 triple",
+      "test_case_id": "sector_20_triple",
+      "expected_detections": {
+        "cam0": {
+          "tip_x": 450,
+          "tip_y": 280,
+          "confidence_min": 0.3,
+          "tolerance_px": 10
+        },
+        "cam1": { "tip_x": 380, "tip_y": 310, "confidence_min": 0.3, "tolerance_px": 10 },
+        "cam2": { "tip_x": 420, "tip_y": 295, "confidence_min": 0.3, "tolerance_px": 10 }
+      },
+      "min_cameras_detected": 2
+    }
+    ```
+- [ ] Run script on all test cases to generate baseline ground truth
+
+**4. Create Regression Test Script:**
+- [ ] Create `tests/test_detection_regression.py`:
+  ```python
+  import pytest
+  from pathlib import Path
+  import json
+  import cv2
+  from src.processing.dart_detection import DartDetector
+  
+  def load_test_cases(category):
+      """Load all test cases from category (single_darts, multi_darts)."""
+      test_dir = Path("data/test_dataset") / category
+      for case_dir in sorted(test_dir.iterdir()):
+          if case_dir.is_dir():
+              ground_truth = json.load((case_dir / "ground_truth.json").open())
+              yield case_dir, ground_truth
+  
+  @pytest.mark.parametrize("test_case", load_test_cases("single_darts"))
+  def test_single_dart_detection(test_case):
+      """Test detection on single dart cases."""
+      case_dir, ground_truth = test_case
+      detector = DartDetector(config)
+      
+      results = {}
+      for camera_id in ["cam0", "cam1", "cam2"]:
+          pre = cv2.imread(str(case_dir / f"{camera_id}_pre.jpg"))
+          post = cv2.imread(str(case_dir / f"{camera_id}_post.jpg"))
+          
+          tip_x, tip_y, conf, _ = detector.detect(pre, post, mask_previous=False)
+          results[camera_id] = (tip_x, tip_y, conf)
+      
+      # Verify at least min_cameras_detected succeeded
+      detected = sum(1 for x, y, c in results.values() if x is not None)
+      assert detected >= ground_truth["min_cameras_detected"]
+      
+      # Verify detected positions within tolerance
+      for camera_id, (tip_x, tip_y, conf) in results.items():
+          if tip_x is not None:
+              expected = ground_truth["expected_detections"][camera_id]
+              assert abs(tip_x - expected["tip_x"]) < expected["tolerance_px"]
+              assert abs(tip_y - expected["tip_y"]) < expected["tolerance_px"]
+              assert conf >= expected["confidence_min"]
+  
+  @pytest.mark.parametrize("test_case", load_test_cases("multi_darts"))
+  def test_multi_dart_detection(test_case):
+      """Test detection on multi-dart cases."""
+      # Similar to single dart, but may have multiple darts per image
+      pass
+  ```
+
+**5. Create Test Runner Script:**
+- [ ] Create `tools/run_regression_tests.py`:
+  - Wrapper around pytest
+  - Runs all regression tests
+  - Generates summary report:
+    - Total test cases
+    - Pass/fail count
+    - Per-camera detection rates
+    - Average position error
+  - Saves report to `tests/regression_report.txt`
+
+**6. Document Usage:**
+- [ ] Add to README.md:
+  ```bash
+  # Run regression tests
+  python tools/run_regression_tests.py
+  
+  # Or use pytest directly
+  pytest tests/test_detection_regression.py -v
+  ```
+
+#### Verification:
+- [ ] Run baseline regression test on current code
+- [ ] All tests pass (100% detection rate on known-good images)
+- [ ] Test execution completes in <10 seconds
+- [ ] Report shows per-camera statistics
+
+#### Success Criteria:
+- Test dataset contains 26+ test cases (21 single + 5 multi)
+- Ground truth files generated for all cases
+- Regression test script runs successfully
+- Baseline test passes 100% (current detection is known-good)
+- Test execution time <10 seconds
+
+#### Usage in Development:
+**Before making changes:**
+```bash
+python tools/run_regression_tests.py  # Baseline
+```
+
+**After making changes:**
+```bash
+python tools/run_regression_tests.py  # Compare
+```
+
+**If tests fail:**
+- Review which test cases failed
+- Inspect saved images to understand why
+- Fix algorithm or adjust ground truth if detection improved
+
+#### Notes:
+- Ground truth is based on current detection (not perfect, but consistent)
+- Tolerance of 10px accounts for minor algorithm variations
+- Tests verify detection doesn't get worse, not that it's perfect
+- Can add new test cases over time as edge cases discovered
+
+---
+
 ### ⬜ Step 6: Coordinate Mapping (Image → Board Plane)
 **Status**: NOT STARTED  
 **Goal**: Map camera pixel coordinates to board coordinate system
