@@ -267,6 +267,9 @@
 18. **Tip position error is systematic** - 20-30px offset is consistent across cameras, can be corrected by fusion averaging or calibration offset
 19. **Dart movement in grouped throws is expected** - when 3rd dart hits T20, it often pushes 1st/2nd dart slightly, must distinguish new dart from moved darts
 20. **Position tracking solves movement detection** - store known dart positions, compare with new detections, ignore positions within 30px of known darts (moved), only emit events for truly new positions
+21. **Tip visibility varies by sector color** - steel tip in black sectors has weak contrast (5-15mm error), white/red/green sectors have better contrast (5-10mm error)
+22. **Hardware optimization possible** - colored tips (instead of steel) improve detectability, colored flights (instead of black) improve contrast, system is personal so dart customization is viable option
+23. **Measure before optimizing** - complete calibration and fusion first, measure actual error with real throws, then optimize if needed (targeted tip search, colored tips, or calibration offset)
 
 ---
 
