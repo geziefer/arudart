@@ -586,19 +586,19 @@ python main.py --dev-mode --manual-test --show-histogram
 
 **Implementation:**
 - [ ] Add `--record-mode` flag to main.py
-- [ ] Behavior similar to `--manual-test`:
-  - Press 'p' to pause
+- [ ] Behavior:
   - Place dart(s) manually
-  - Press 'p' again to capture
+  - Press 'c' to capture
+  - Enter description in console
 - [ ] On capture:
   - Capture current frame from all 3 cameras (post-frame only, no processing)
-  - Show popup dialog: "Enter description:"
+  - Prompt for description in console
   - User types description (e.g., "sector_20_triple", "two_darts_crossing")
   - Save images as:
     ```
-    data/recordings/cam0_001_sector_20_triple.jpg
-    data/recordings/cam1_001_sector_20_triple.jpg
-    data/recordings/cam2_001_sector_20_triple.jpg
+    data/recordings/001_cam0_sector_20_triple.jpg
+    data/recordings/001_cam1_sector_20_triple.jpg
+    data/recordings/001_cam2_sector_20_triple.jpg
     ```
   - Auto-increment number (001, 002, 003...)
   - No detection, no thresholding, just raw capture + naming
@@ -607,12 +607,12 @@ python main.py --dev-mode --manual-test --show-histogram
 **Usage:**
 ```bash
 python main.py --dev-mode --record-mode
-# Press 'p', place dart, press 'p', type name, repeat
+# Place dart, press 'c', type name, repeat
 ```
 
 **Output:**
 - All images in flat `data/recordings/` directory
-- Naming: `cam{0,1,2}_{number}_{description}.jpg`
+- Naming: `{number}_cam{0,1,2}_{description}.jpg`
 - Can organize into subfolders later if needed
 
 ---

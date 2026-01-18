@@ -13,6 +13,99 @@ Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° interva
 
 ---
 
+## Code Structure & Key Patterns
+
+### main.py Structure
+
+**Command-line arguments:**
+- `--config`: Path to config file (default: config.toml)
+- `--dev-mode`: Enable preview windows and verbose logging
+- `--show-histogram`: Show RGB histogram overlay (dev mode only)
+- `--manual-test`: Pause/play mode for controlled testing
+- `--record-mode`: Capture images for regression tests (no detection)
+- `--single-camera N`: Test single camera only (0, 1, or 2)
+
+**Initialization sequence:**
+1. Parse arguments
+2. Setup logging
+3. Load config
+4. Initialize CameraManager (auto-detect or single camera)
+5. Start all camera streams
+6. Initialize MotionDetector
+7. Initialize BackgroundModel
+8. Create per-camera DartDetector instances
+9. Create session folder
+10. Auto-initialize background after 2 seconds
+
+**Main loop structure:**
+```python
+while True:
+    # 1. Get frames from all cameras
+    frames = {cam_id: camera_manager.get_latest_frame(cam_id) for cam_id in camera_ids}
+    
+    # 2. Check motion at intervals (if not paused)
+    if not paused and background_initialized:
+        persistent_change, per_camera_motion, max_motion = motion_detector.detect_persistent_change(...)
+        
+        # State machine: idle → motion_detected → dart_detected → idle
+        if motion_state == "idle" and persistent_change:
+            motion_state = "motion_detected"
+        elif motion_state == "motion_detected" and not persistent_change:
+            motion_state = "dart_detected"
+        elif motion_state == "dart_detected":
+            # Run detection on all cameras
+            # Save images
+            # Update background
+            motion_state = "idle"
+    
+    # 3. Display frames in dev mode
+    if args.dev_mode:
+        for camera_id in camera_ids:
+            # Add overlays (FPS, state, brightness)
+            cv2.imshow(f"Camera {camera_id}", display_frame)
+        
+        # Handle keypresses
+        key = cv2.waitKey(1)
+        if key == ord('q'): break
+        elif key == ord('r'): # Reset background
+        elif key == ord('p'): # Pause/play (manual test or record mode)
+```
+
+**Key variables:**
+- `motion_state`: "idle" | "motion_detected" | "dart_detected"
+- `paused`: Boolean for pause/play in manual test or record mode
+- `background_initialized`: Boolean, auto-set after 2 seconds
+- `throw_count`: Increments with each detection
+- `recording_number`: Auto-increments in record mode
+- `dart_detectors`: Dict of per-camera DartDetector instances
+
+**Per-camera detection pattern:**
+```python
+for camera_id in camera_ids:
+    pre_frame = background_model.get_pre_impact(camera_id)
+    post_frame = background_model.get_post_impact(camera_id)
+    
+    tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(
+        pre_frame, post_frame, mask_previous=False
+    )
+    
+    if tip_x is not None:
+        # Detection successful
+        detections.append((camera_id, tip_x, tip_y, confidence))
+```
+
+**Image saving pattern:**
+```python
+throw_dir = session_dir / f"Throw_{throw_count:03d}_{timestamp}"
+throw_dir.mkdir(parents=True, exist_ok=True)
+
+for camera_id in camera_ids:
+    # Save annotated image
+    cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), annotated_frame)
+```
+
+---
+
 ## Recent Improvements (2026-01-11)
 
 ### Detection Accuracy Improvements

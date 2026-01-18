@@ -49,6 +49,7 @@ def main():
     parser.add_argument('--dev-mode', action='store_true', help='Enable development mode with preview')
     parser.add_argument('--show-histogram', action='store_true', help='Show histogram overlay (dev mode only)')
     parser.add_argument('--manual-test', action='store_true', help='Enable manual testing mode (pause/place dart/detect)')
+    parser.add_argument('--record-mode', action='store_true', help='Enable recording mode (capture images for regression tests)')
     parser.add_argument('--single-camera', type=int, choices=[0, 1, 2], help='Test single camera only (0, 1, or 2)')
     args = parser.parse_args()
     
@@ -126,6 +127,24 @@ def main():
     paused = False  # Pause/play for manual dart placement testing
     reset_message_time = 0  # Track when reset message was shown
     reset_message_duration = 2.0  # Show reset message for 2 seconds
+    recording_number = 1  # Auto-increment number for recordings
+    
+    # Create recordings folder if in record mode
+    if args.record_mode:
+        recordings_dir = Path("data/recordings")
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        # Find next recording number
+        existing_recordings = list(recordings_dir.glob("*_cam*.jpg"))
+        if existing_recordings:
+            # Extract numbers from filenames like 001_cam0_description.jpg
+            numbers = []
+            for f in existing_recordings:
+                parts = f.stem.split('_')
+                if len(parts) >= 2 and parts[0].isdigit():
+                    numbers.append(int(parts[0]))
+            if numbers:
+                recording_number = max(numbers) + 1
+        logger.info(f"Recording mode enabled - next recording number: {recording_number:03d}")
     
     # Create session folder for this run
     session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -141,6 +160,8 @@ def main():
     logger.info(f"Session folder: {session_dir}")
     if args.manual_test:
         logger.info("=== MANUAL TESTING MODE: Press 'p' to pause/place dart, 'p' again to detect ===")
+    if args.record_mode:
+        logger.info("=== RECORDING MODE: Place dart(s), press 'c' to capture and name ===")
     
     try:
         logger.info("Starting motion detection...")
@@ -169,8 +190,8 @@ def main():
                     frames[camera_id] = frame
                     fps_counters[camera_id].tick()
             
-            # Initialize background on first frames
-            if not background_initialized and len(frames) == len(camera_ids):
+            # Initialize background on first frames (skip in record mode)
+            if not args.record_mode and not background_initialized and len(frames) == len(camera_ids):
                 # Auto-initialize background after 2 seconds (allow cameras to stabilize)
                 if current_time - start_time > 2.0:
                     logger.info("Auto-initializing background...")
@@ -181,8 +202,8 @@ def main():
                     reset_message_time = current_time
                     logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
             
-            # Check motion at intervals (only when not paused)
-            if not paused and background_initialized == True and current_time - last_motion_check >= motion_check_interval:
+            # Check motion at intervals (only when not paused and not in record mode)
+            if not paused and not args.record_mode and background_initialized == True and current_time - last_motion_check >= motion_check_interval:
                 last_motion_check = current_time
                 
                 # Use persistent change detection instead of transient motion
@@ -328,6 +349,8 @@ def main():
                             state_text += " [PAUSED]"
                         if current_time - reset_message_time < reset_message_duration:
                             state_text += " [BACKGROUND RESET]"
+                    if args.record_mode:
+                        state_text += f" [REC #{recording_number:03d}]"
                     cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     
@@ -380,8 +403,75 @@ def main():
                     last_detection_time = 0  # Reset cooldown
                     reset_message_time = current_time  # Show reset message
                     logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
+                elif key == ord('c'):
+                    # Capture in record mode (only in record mode)
+                    if not args.record_mode:
+                        continue
+                    
+                    logger.info("=== CAPTURING - Enter description in window ===")
+                    
+                    # Capture current frames from all cameras
+                    captured_frames = {}
+                    for camera_id in camera_ids:
+                        frame = camera_manager.get_latest_frame(camera_id)
+                        if frame is not None:
+                            captured_frames[camera_id] = frame
+                    
+                    # Get text input using OpenCV window overlay
+                    description = ""
+                    input_active = True
+                    
+                    while input_active:
+                        # Use first camera for input display
+                        display_cam = sorted(camera_ids)[0]
+                        input_frame = captured_frames[display_cam].copy()
+                        
+                        # Draw semi-transparent overlay
+                        overlay = input_frame.copy()
+                        cv2.rectangle(overlay, (50, 200), (750, 350), (0, 0, 0), -1)
+                        cv2.addWeighted(overlay, 0.7, input_frame, 0.3, 0, input_frame)
+                        
+                        # Draw text prompt and input
+                        cv2.putText(input_frame, f"Recording {recording_number:03d}", (60, 240),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                        cv2.putText(input_frame, "Enter description:", (60, 280),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                        cv2.putText(input_frame, f"> {description}_", (60, 320),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        cv2.putText(input_frame, "Press ENTER to save, ESC to cancel", (60, 340),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+                        
+                        cv2.imshow(f"Camera {display_cam}", input_frame)
+                        
+                        # Wait for key input
+                        key = cv2.waitKey(0) & 0xFF
+                        
+                        if key == 13:  # Enter
+                            input_active = False
+                        elif key == 27:  # ESC
+                            description = ""
+                            input_active = False
+                        elif key == 8:  # Backspace
+                            description = description[:-1]
+                        elif 32 <= key <= 126:  # Printable ASCII
+                            description += chr(key)
+                    
+                    if description:
+                        # Save images with naming: {number}_cam{0,1,2}_{description}.jpg
+                        recordings_dir = Path("data/recordings")
+                        for camera_id in sorted(captured_frames.keys()):
+                            filename = f"{recording_number:03d}_cam{camera_id}_{description}.jpg"
+                            filepath = recordings_dir / filename
+                            cv2.imwrite(str(filepath), captured_frames[camera_id])
+                            logger.info(f"Saved: {filename}")
+                        
+                        recording_number += 1
+                        logger.info(f"=== RECORDING COMPLETE - Next number: {recording_number:03d} ===")
+                    else:
+                        logger.info("=== RECORDING CANCELLED (no description entered) ===")
+                
                 elif key == ord('p'):
-                    # Toggle pause for manual dart placement (only in manual test mode)
+                    # Toggle pause for manual dart placement (manual test mode only)
                     if not args.manual_test:
                         continue
                     
