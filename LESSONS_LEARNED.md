@@ -259,6 +259,9 @@
 10. **Manual testing enables precision** - controlled placement beats random throws
 11. **❌ Board-center heuristic DOES NOT WORK** - tip position relative to center depends on dart location on board
 12. **✅ Y-coordinate heuristic is PRIMARY method** - tip always has larger Y than flight (embedded vs sticking out), works across all camera angles except dart pointing at camera (impossible in real throws)
+13. **Geometric blind spots are expected** - 120° camera spacing creates edge-on views when dart is close to one camera
+14. **Multi-camera redundancy is essential** - at least 2/3 cameras detect in 75% of cases, fusion will handle outliers
+15. **Two-step threshold has limits** - can't fix geometric invisibility, only helps with weak signals
 
 ---
 
