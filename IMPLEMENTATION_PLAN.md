@@ -1078,6 +1078,12 @@ python tools/run_regression_tests.py  # Compare
 - Movement threshold (30px) should be larger than tip position error (20-30px) but smaller than dart spacing
 - Throw timeout (2 seconds) allows for slow/bouncing throws
 - Bounce-out detection prevents false "dart still there" state
+- **Camera vibration handling:**
+  - Dart impact causes camera shake (~200-300ms)
+  - Pull-out causes camera shake (~200-300ms)
+  - Reuse settling logic from Step 3: wait for motion < threshold for 0.5s continuously
+  - Apply to both throw detection and pull-out detection
+  - Ensures stable frames before detection and state transitions
 
 ---
 
