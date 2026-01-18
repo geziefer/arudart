@@ -572,65 +572,98 @@ python main.py --dev-mode --manual-test --show-histogram
 - Catch breaking changes immediately
 - Enable confident refactoring
 
-#### Tasks:
+#### Workflow Overview:
 
-**1. Create Test Dataset Structure:**
-- [ ] Create directory structure:
-  ```
-  data/test_dataset/
-  ├── single_darts/          # 21 test cases (one per sector + bull)
-  │   ├── sector_01_triple/
-  │   │   ├── cam0_pre.jpg
-  │   │   ├── cam0_post.jpg
-  │   │   ├── cam1_pre.jpg
-  │   │   ├── cam1_post.jpg
-  │   │   ├── cam2_pre.jpg
-  │   │   ├── cam2_post.jpg
-  │   │   └── ground_truth.json
-  │   ├── sector_02_triple/
-  │   └── ...
-  ├── multi_darts/           # 5 test cases (TC7.6 scenarios)
-  │   ├── two_darts_separated/
-  │   ├── two_darts_close/
-  │   ├── two_darts_crossing/
-  │   ├── three_darts_cluster/
-  │   └── three_darts_crossing/
-  └── edge_cases/            # Optional: near wires, steep angles
-  ```
+**Part 1: Record test images** (fast, during manual testing)  
+**Part 2: Annotate ground truth** (fast, click tip positions)  
+**Part 3: Run regression tests** (automated, <10 seconds)
 
-**2. Copy Existing Test Sessions:**
-- [ ] Copy TC7.5 session (Session_001_2026-01-17_19-30-54) to `single_darts/`
-  - Extract pre/post images from each throw
-  - Rename to standardized format (cam0_pre.jpg, cam0_post.jpg, etc.)
-- [ ] Copy TC7.6 session (Session_001_2026-01-18_13-17-05) to `multi_darts/`
-  - Extract pre/post images from each throw
-  - Organize by scenario
+---
 
-**3. Generate Ground Truth Files:**
-- [ ] Create script: `tools/generate_ground_truth.py`
-  - Reads existing detection results from logs
-  - Creates `ground_truth.json` for each test case
-  - Format:
-    ```json
-    {
-      "description": "Dart in sector 20 triple",
-      "test_case_id": "sector_20_triple",
-      "expected_detections": {
-        "cam0": {
-          "tip_x": 450,
-          "tip_y": 280,
-          "confidence_min": 0.3,
-          "tolerance_px": 10
-        },
-        "cam1": { "tip_x": 380, "tip_y": 310, "confidence_min": 0.3, "tolerance_px": 10 },
-        "cam2": { "tip_x": 420, "tip_y": 295, "confidence_min": 0.3, "tolerance_px": 10 }
-      },
-      "min_cameras_detected": 2
-    }
+#### Part 1: Recording Mode
+
+**Purpose:** Quickly capture raw images with descriptive names
+
+**Implementation:**
+- [ ] Add `--record-mode` flag to main.py
+- [ ] Behavior similar to `--manual-test`:
+  - Press 'p' to pause
+  - Place dart(s) manually
+  - Press 'p' again to capture
+- [ ] On capture:
+  - Capture current frame from all 3 cameras (post-frame only, no processing)
+  - Show popup dialog: "Enter description:"
+  - User types description (e.g., "sector_20_triple", "two_darts_crossing")
+  - Save images as:
     ```
-- [ ] Run script on all test cases to generate baseline ground truth
+    data/recordings/cam0_001_sector_20_triple.jpg
+    data/recordings/cam1_001_sector_20_triple.jpg
+    data/recordings/cam2_001_sector_20_triple.jpg
+    ```
+  - Auto-increment number (001, 002, 003...)
+  - No detection, no thresholding, just raw capture + naming
+- [ ] Continue recording next throw (002, 003, etc.)
 
-**4. Create Regression Test Script:**
+**Usage:**
+```bash
+python main.py --dev-mode --record-mode
+# Press 'p', place dart, press 'p', type name, repeat
+```
+
+**Output:**
+- All images in flat `data/recordings/` directory
+- Naming: `cam{0,1,2}_{number}_{description}.jpg`
+- Can organize into subfolders later if needed
+
+---
+
+#### Part 2: Ground Truth Annotation Tool
+
+**Purpose:** Quickly annotate tip positions by clicking on images
+
+**Implementation:**
+- [ ] Create script: `tools/annotate_ground_truth.py`
+- [ ] Scan `data/recordings/` for images without matching `.json` file
+- [ ] Group images by number (e.g., all `*_001_*` images together)
+- [ ] For each group, display images in order: cam0, cam1, cam2
+- [ ] Display image in OpenCV window
+- [ ] User clicks on dart tip position
+- [ ] Show crosshair on hover for precision
+- [ ] Press 's' to save annotation and move to next camera
+- [ ] Press 'n' to skip image (no dart visible in this camera)
+- [ ] Press 'q' to quit
+- [ ] Save ground truth as JSON:
+  ```json
+  {
+    "image": "cam0_001_sector_20_triple.jpg",
+    "tip_x": 450,
+    "tip_y": 280,
+    "description": "sector_20_triple"
+  }
+  ```
+  Saved as: `cam0_001_sector_20_triple.json`
+- [ ] After annotating all 3 cameras of one throw, move to next throw
+
+**Usage:**
+```bash
+python tools/annotate_ground_truth.py
+# Click tip position, press 's', repeat for cam0/cam1/cam2
+```
+
+**Features:**
+- Shows image filename in window title
+- Shows current camera and throw number
+- Displays click coordinates before saving
+- Skips already-annotated images
+- Progress indicator (e.g., "Image 5/50")
+
+---
+
+#### Part 3: Regression Test Script
+
+**Purpose:** Automated testing against ground truth
+
+**Implementation:**
 - [ ] Create `tests/test_detection_regression.py`:
   ```python
   import pytest
@@ -639,51 +672,46 @@ python main.py --dev-mode --manual-test --show-histogram
   import cv2
   from src.processing.dart_detection import DartDetector
   
-  def load_test_cases(category):
-      """Load all test cases from category (single_darts, multi_darts)."""
-      test_dir = Path("data/test_dataset") / category
-      for case_dir in sorted(test_dir.iterdir()):
-          if case_dir.is_dir():
-              ground_truth = json.load((case_dir / "ground_truth.json").open())
-              yield case_dir, ground_truth
-  
-  @pytest.mark.parametrize("test_case", load_test_cases("single_darts"))
-  def test_single_dart_detection(test_case):
-      """Test detection on single dart cases."""
-      case_dir, ground_truth = test_case
-      detector = DartDetector(config)
+  def load_test_cases():
+      """Load all images with ground truth from recordings/."""
+      recordings_dir = Path("data/recordings")
+      test_cases = []
       
-      results = {}
-      for camera_id in ["cam0", "cam1", "cam2"]:
-          pre = cv2.imread(str(case_dir / f"{camera_id}_pre.jpg"))
-          post = cv2.imread(str(case_dir / f"{camera_id}_post.jpg"))
+      for json_file in sorted(recordings_dir.glob("*.json")):
+          ground_truth = json.load(json_file.open())
+          image_file = recordings_dir / ground_truth["image"]
           
-          tip_x, tip_y, conf, _ = detector.detect(pre, post, mask_previous=False)
-          results[camera_id] = (tip_x, tip_y, conf)
+          if image_file.exists():
+              test_cases.append((image_file, ground_truth))
       
-      # Verify at least min_cameras_detected succeeded
-      detected = sum(1 for x, y, c in results.values() if x is not None)
-      assert detected >= ground_truth["min_cameras_detected"]
-      
-      # Verify detected positions within tolerance
-      for camera_id, (tip_x, tip_y, conf) in results.items():
-          if tip_x is not None:
-              expected = ground_truth["expected_detections"][camera_id]
-              assert abs(tip_x - expected["tip_x"]) < expected["tolerance_px"]
-              assert abs(tip_y - expected["tip_y"]) < expected["tolerance_px"]
-              assert conf >= expected["confidence_min"]
+      return test_cases
   
-  @pytest.mark.parametrize("test_case", load_test_cases("multi_darts"))
-  def test_multi_dart_detection(test_case):
-      """Test detection on multi-dart cases."""
-      # Similar to single dart, but may have multiple darts per image
-      pass
+  @pytest.mark.parametrize("image_file,ground_truth", load_test_cases())
+  def test_dart_detection(image_file, ground_truth):
+      """Test detection on recorded images."""
+      # Load image
+      post_frame = cv2.imread(str(image_file))
+      
+      # Create blank pre-frame (simulate clean board)
+      pre_frame = post_frame.copy()  # Or load actual pre-frame if recorded
+      
+      # Run detection
+      detector = DartDetector(config)
+      tip_x, tip_y, conf, _ = detector.detect(pre_frame, post_frame, mask_previous=False)
+      
+      # Verify detection
+      assert tip_x is not None, f"No detection for {image_file.name}"
+      
+      # Verify position within tolerance (10px)
+      tolerance = 10
+      assert abs(tip_x - ground_truth["tip_x"]) < tolerance, \
+          f"X position error: {abs(tip_x - ground_truth['tip_x'])}px"
+      assert abs(tip_y - ground_truth["tip_y"]) < tolerance, \
+          f"Y position error: {abs(tip_y - ground_truth['tip_y'])}px"
   ```
 
-**5. Create Test Runner Script:**
-- [ ] Create `tools/run_regression_tests.py`:
+- [ ] Create test runner: `tools/run_regression_tests.py`
   - Wrapper around pytest
-  - Runs all regression tests
   - Generates summary report:
     - Total test cases
     - Pass/fail count
@@ -691,30 +719,33 @@ python main.py --dev-mode --manual-test --show-histogram
     - Average position error
   - Saves report to `tests/regression_report.txt`
 
-**6. Document Usage:**
-- [ ] Add to README.md:
-  ```bash
-  # Run regression tests
-  python tools/run_regression_tests.py
-  
-  # Or use pytest directly
-  pytest tests/test_detection_regression.py -v
-  ```
+**Usage:**
+```bash
+# Run all regression tests
+python tools/run_regression_tests.py
+
+# Or use pytest directly
+pytest tests/test_detection_regression.py -v
+```
+
+---
 
 #### Verification:
-- [ ] Run baseline regression test on current code
-- [ ] All tests pass (100% detection rate on known-good images)
+- [ ] Record 20+ test images using recording mode
+- [ ] Annotate all images using annotation tool
+- [ ] Run regression tests on annotated images
+- [ ] All tests pass (baseline)
 - [ ] Test execution completes in <10 seconds
-- [ ] Report shows per-camera statistics
 
 #### Success Criteria:
-- Test dataset contains 26+ test cases (21 single + 5 multi)
-- Ground truth files generated for all cases
-- Regression test script runs successfully
+- Recording mode captures images quickly (no manual folder organization)
+- Annotation tool allows fast tip position marking
+- Regression tests run automatically
 - Baseline test passes 100% (current detection is known-good)
 - Test execution time <10 seconds
 
 #### Usage in Development:
+
 **Before making changes:**
 ```bash
 python tools/run_regression_tests.py  # Baseline
@@ -728,13 +759,14 @@ python tools/run_regression_tests.py  # Compare
 **If tests fail:**
 - Review which test cases failed
 - Inspect saved images to understand why
-- Fix algorithm or adjust ground truth if detection improved
+- Fix algorithm or update ground truth if detection improved
 
 #### Notes:
-- Ground truth is based on current detection (not perfect, but consistent)
+- Ground truth is human-annotated (accurate tip positions)
 - Tolerance of 10px accounts for minor algorithm variations
-- Tests verify detection doesn't get worse, not that it's perfect
-- Can add new test cases over time as edge cases discovered
+- Tests verify detection doesn't get worse after changes
+- Can record more images anytime to expand test coverage
+- Organize images into subfolders later if needed (single_darts/, multi_darts/, etc.)
 
 ---
 
