@@ -87,8 +87,41 @@ python main.py --dev-mode --record-mode
 - Quick image capture without detection overhead
 
 **Next steps:**
-1. Annotate ground truth: `python tools/annotate_ground_truth.py` (to be implemented)
+1. **Annotate ground truth:** `python tools/annotate_ground_truth.py`
 2. Run regression tests: `python tools/run_regression_tests.py` (to be implemented)
+
+---
+
+### Annotation Tool (Ground Truth Creation)
+
+After recording images, annotate dart tip positions for regression testing:
+
+```bash
+python tools/annotate_ground_truth.py
+```
+
+**Workflow:**
+1. Tool displays first unannotated image
+2. Click on dart tip position
+3. Press `s` to save annotation
+4. Automatically moves to next camera (cam0 → cam1 → cam2)
+5. Repeats for all recordings
+
+**Controls:**
+- **Click** - Mark tip position (shows green circle)
+- `s` - Save annotation and continue
+- `n` - Skip image (no dart visible in this camera)
+- `q` - Quit annotation session
+
+**Output:**
+- Creates JSON file for each image: `001_cam0_sector_20_triple.json`
+- Format: `{"image": "...", "tip_x": 450, "tip_y": 280, "description": "..."}`
+
+**Features:**
+- Shows crosshair at mouse position for precision
+- Groups images by recording number (annotate all 3 cameras of same throw together)
+- Skips already-annotated images
+- Progress tracking (shows count of annotated/skipped)
 
 ---
 
