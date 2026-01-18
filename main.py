@@ -128,6 +128,8 @@ def main():
     reset_message_time = 0  # Track when reset message was shown
     reset_message_duration = 2.0  # Show reset message for 2 seconds
     recording_number = 1  # Auto-increment number for recordings
+    recording_state = "waiting_for_pre"  # State: waiting_for_pre, waiting_for_post
+    pre_frames = {}  # Store pre-frames for current recording
     
     # Create recordings folder if in record mode
     if args.record_mode:
@@ -161,7 +163,7 @@ def main():
     if args.manual_test:
         logger.info("=== MANUAL TESTING MODE: Press 'p' to pause/place dart, 'p' again to detect ===")
     if args.record_mode:
-        logger.info("=== RECORDING MODE: Place dart(s), press 'c' to capture and name ===")
+        logger.info("=== RECORDING MODE: Press 'c' for PRE, place dart, press 'c' for POST ===")
     
     try:
         logger.info("Starting motion detection...")
@@ -350,7 +352,10 @@ def main():
                         if current_time - reset_message_time < reset_message_duration:
                             state_text += " [BACKGROUND RESET]"
                     if args.record_mode:
-                        state_text += f" [REC #{recording_number:03d}]"
+                        if recording_state == "waiting_for_pre":
+                            state_text += f" [REC #{recording_number:03d} - Press 'c' for PRE]"
+                        elif recording_state == "waiting_for_post":
+                            state_text += f" [REC #{recording_number:03d} - Press 'c' for POST]"
                     cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     
@@ -408,67 +413,92 @@ def main():
                     if not args.record_mode:
                         continue
                     
-                    logger.info("=== CAPTURING - Enter description in window ===")
+                    if recording_state == "waiting_for_pre":
+                        # Capture PRE frame (clean board)
+                        logger.info(f"=== CAPTURING PRE-FRAME for recording {recording_number:03d} ===")
+                        
+                        # Capture current frames from all cameras
+                        pre_frames = {}
+                        for camera_id in camera_ids:
+                            frame = camera_manager.get_latest_frame(camera_id)
+                            if frame is not None:
+                                pre_frames[camera_id] = frame
+                        
+                        logger.info(f"=== PRE-FRAME CAPTURED - Now place dart and press 'c' for POST ===")
+                        recording_state = "waiting_for_post"
                     
-                    # Capture current frames from all cameras
-                    captured_frames = {}
-                    for camera_id in camera_ids:
-                        frame = camera_manager.get_latest_frame(camera_id)
-                        if frame is not None:
-                            captured_frames[camera_id] = frame
-                    
-                    # Get text input using OpenCV window overlay
-                    description = ""
-                    input_active = True
-                    
-                    while input_active:
-                        # Use first camera for input display
-                        display_cam = sorted(camera_ids)[0]
-                        input_frame = captured_frames[display_cam].copy()
+                    elif recording_state == "waiting_for_post":
+                        # Capture POST frame (with dart)
+                        logger.info(f"=== CAPTURING POST-FRAME for recording {recording_number:03d} ===")
                         
-                        # Draw semi-transparent overlay
-                        overlay = input_frame.copy()
-                        cv2.rectangle(overlay, (50, 200), (750, 350), (0, 0, 0), -1)
-                        cv2.addWeighted(overlay, 0.7, input_frame, 0.3, 0, input_frame)
+                        # Capture current frames from all cameras
+                        post_frames = {}
+                        for camera_id in camera_ids:
+                            frame = camera_manager.get_latest_frame(camera_id)
+                            if frame is not None:
+                                post_frames[camera_id] = frame
                         
-                        # Draw text prompt and input
-                        cv2.putText(input_frame, f"Recording {recording_number:03d}", (60, 240),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                        cv2.putText(input_frame, "Enter description:", (60, 280),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-                        cv2.putText(input_frame, f"> {description}_", (60, 320),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                        cv2.putText(input_frame, "Press ENTER to save, ESC to cancel", (60, 340),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+                        # Get text input using OpenCV window overlay
+                        description = ""
+                        input_active = True
                         
-                        cv2.imshow(f"Camera {display_cam}", input_frame)
+                        while input_active:
+                            # Use first camera for input display
+                            display_cam = sorted(camera_ids)[0]
+                            input_frame = post_frames[display_cam].copy()
+                            
+                            # Draw semi-transparent overlay
+                            overlay = input_frame.copy()
+                            cv2.rectangle(overlay, (50, 200), (750, 350), (0, 0, 0), -1)
+                            cv2.addWeighted(overlay, 0.7, input_frame, 0.3, 0, input_frame)
+                            
+                            # Draw text prompt and input
+                            cv2.putText(input_frame, f"Recording {recording_number:03d}", (60, 240),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                            cv2.putText(input_frame, "Enter description:", (60, 280),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                            cv2.putText(input_frame, f"> {description}_", (60, 320),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                            cv2.putText(input_frame, "Press ENTER to save, ESC to cancel", (60, 340),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+                            
+                            cv2.imshow(f"Camera {display_cam}", input_frame)
+                            
+                            # Wait for key input
+                            key = cv2.waitKey(0) & 0xFF
+                            
+                            if key == 13:  # Enter
+                                input_active = False
+                            elif key == 27:  # ESC
+                                description = ""
+                                input_active = False
+                            elif key == 8:  # Backspace
+                                description = description[:-1]
+                            elif 32 <= key <= 126:  # Printable ASCII
+                                description += chr(key)
                         
-                        # Wait for key input
-                        key = cv2.waitKey(0) & 0xFF
-                        
-                        if key == 13:  # Enter
-                            input_active = False
-                        elif key == 27:  # ESC
-                            description = ""
-                            input_active = False
-                        elif key == 8:  # Backspace
-                            description = description[:-1]
-                        elif 32 <= key <= 126:  # Printable ASCII
-                            description += chr(key)
-                    
-                    if description:
-                        # Save images with naming: {number}_cam{0,1,2}_{description}.jpg
-                        recordings_dir = Path("data/recordings")
-                        for camera_id in sorted(captured_frames.keys()):
-                            filename = f"{recording_number:03d}_cam{camera_id}_{description}.jpg"
-                            filepath = recordings_dir / filename
-                            cv2.imwrite(str(filepath), captured_frames[camera_id])
-                            logger.info(f"Saved: {filename}")
-                        
-                        recording_number += 1
-                        logger.info(f"=== RECORDING COMPLETE - Next number: {recording_number:03d} ===")
-                    else:
-                        logger.info("=== RECORDING CANCELLED (no description entered) ===")
+                        if description:
+                            # Save images with naming: {number}_cam{0,1,2}_{description}_pre.jpg and _post.jpg
+                            recordings_dir = Path("data/recordings")
+                            for camera_id in sorted(pre_frames.keys()):
+                                # Save PRE image
+                                pre_filename = f"{recording_number:03d}_cam{camera_id}_{description}_pre.jpg"
+                                pre_filepath = recordings_dir / pre_filename
+                                cv2.imwrite(str(pre_filepath), pre_frames[camera_id])
+                                
+                                # Save POST image
+                                post_filename = f"{recording_number:03d}_cam{camera_id}_{description}_post.jpg"
+                                post_filepath = recordings_dir / post_filename
+                                cv2.imwrite(str(post_filepath), post_frames[camera_id])
+                                
+                                logger.info(f"Saved: {pre_filename} and {post_filename}")
+                            
+                            recording_number += 1
+                            recording_state = "waiting_for_pre"
+                            logger.info(f"=== RECORDING COMPLETE - Next number: {recording_number:03d} ===")
+                        else:
+                            logger.info("=== RECORDING CANCELLED (no description entered) ===")
+                            recording_state = "waiting_for_pre"
                 
                 elif key == ord('p'):
                     # Toggle pause for manual dart placement (manual test mode only)

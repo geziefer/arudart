@@ -22,44 +22,39 @@ from src.processing.dart_detection import DartDetector
 from src.config import load_config
 
 
-def load_pre_images(data_dir):
-    """Load pre-images (clean board) for each camera."""
-    pre_images = {}
-    
-    for cam_id in [0, 1, 2]:
-        pre_file = data_dir / f"cam{cam_id}_pre.jpg"
-        if pre_file.exists():
-            pre_images[cam_id] = cv2.imread(str(pre_file))
-            print(f"Loaded pre-image: {pre_file}")
-        else:
-            print(f"Warning: Pre-image not found: {pre_file}")
-    
-    return pre_images
-
-
 def load_test_cases(testimages_dir):
-    """Load all test cases (images with ground truth JSON) from testimages and subdirectories."""
+    """Load all test cases (POST images with ground truth JSON) from testimages and subdirectories."""
     test_cases = []
     
-    # Find all JSON files recursively
-    json_files = sorted(testimages_dir.rglob("*.json"))
+    # Find all JSON files recursively (only for POST images)
+    json_files = sorted(testimages_dir.rglob("*_post.json"))
     
     for json_file in json_files:
         # Load ground truth
         with open(json_file, 'r') as f:
             ground_truth = json.load(f)
         
-        # Check if image exists (in same directory as JSON)
-        image_file = json_file.parent / ground_truth["image"]
-        if not image_file.exists():
+        # Check if POST image exists (in same directory as JSON)
+        post_image_file = json_file.parent / ground_truth["image"]
+        if not post_image_file.exists():
             continue
         
-        # Extract camera ID from filename (e.g., "001_cam0_BS1.jpg" -> 0)
-        parts = image_file.stem.split('_')
+        # Find corresponding PRE image
+        # POST: 001_cam0_BS1_post.jpg -> PRE: 001_cam0_BS1_pre.jpg
+        pre_image_name = ground_truth["image"].replace("_post.jpg", "_pre.jpg")
+        pre_image_file = json_file.parent / pre_image_name
+        
+        if not pre_image_file.exists():
+            print(f"Warning: PRE image not found for {ground_truth['image']}")
+            continue
+        
+        # Extract camera ID from filename (e.g., "001_cam0_BS1_post.jpg" -> 0)
+        parts = post_image_file.stem.split('_')
         if len(parts) >= 2 and parts[1].startswith('cam'):
             cam_id = int(parts[1][3])  # Extract number from "cam0"
             test_cases.append({
-                "image_file": image_file,
+                "pre_image_file": pre_image_file,
+                "post_image_file": post_image_file,
                 "camera_id": cam_id,
                 "ground_truth": ground_truth
             })
@@ -99,14 +94,8 @@ def main():
         aspect_ratio_min=dart_config['aspect_ratio_min']
     )
     
-    # Load pre-images
+    # Load pre-images (no longer needed - using paired images)
     data_dir = Path("data")
-    pre_images = load_pre_images(data_dir)
-    
-    if not pre_images:
-        print("Error: No pre-images found!")
-        print("Please place cam0_pre.jpg, cam1_pre.jpg, cam2_pre.jpg in data/")
-        return
     
     # Load test cases
     testimages_dir = Path("data/testimages")
@@ -142,23 +131,21 @@ def main():
     tolerance = 10  # pixels
     
     for i, test_case in enumerate(test_cases, 1):
-        image_file = test_case["image_file"]
+        pre_image_file = test_case["pre_image_file"]
+        post_image_file = test_case["post_image_file"]
         cam_id = test_case["camera_id"]
         gt = test_case["ground_truth"]
         
-        # Check if pre-image available for this camera
-        if cam_id not in pre_images:
-            print(f"[{i}/{len(test_cases)}] SKIP {image_file.name} (no pre-image for cam{cam_id})")
-            continue
+        # Load pre and post images
+        pre_image = cv2.imread(str(pre_image_file))
+        post_image = cv2.imread(str(post_image_file))
         
-        # Load post-image
-        post_image = cv2.imread(str(image_file))
-        if post_image is None:
-            print(f"[{i}/{len(test_cases)}] SKIP {image_file.name} (could not load)")
+        if pre_image is None or post_image is None:
+            print(f"[{i}/{len(test_cases)}] SKIP {post_image_file.name} (could not load images)")
             continue
         
         # Run detection
-        tip_x, tip_y, confidence = run_detection(detector, pre_images[cam_id], post_image)
+        tip_x, tip_y, confidence = run_detection(detector, pre_image, post_image)
         
         # Update stats
         results["total"] += 1
@@ -172,7 +159,7 @@ def main():
         # Check result
         if tip_x is None:
             results["failed_no_detection"] += 1
-            print(f"[{i}/{len(test_cases)}] FAIL {image_file.name} - No detection")
+            print(f"[{i}/{len(test_cases)}] FAIL {post_image_file.name} - No detection")
         else:
             error_x = abs(tip_x - gt["tip_x"])
             error_y = abs(tip_y - gt["tip_y"])
@@ -182,10 +169,10 @@ def main():
                 results["passed"] += 1
                 results["per_camera"][cam_id]["passed"] += 1
                 results["per_ring"][ring]["passed"] += 1
-                print(f"[{i}/{len(test_cases)}] PASS {image_file.name} - Error: {error_total:.1f}px (conf={confidence:.2f})")
+                print(f"[{i}/{len(test_cases)}] PASS {post_image_file.name} - Error: {error_total:.1f}px (conf={confidence:.2f})")
             else:
                 results["failed_position"] += 1
-                print(f"[{i}/{len(test_cases)}] FAIL {image_file.name} - Error: {error_total:.1f}px (X:{error_x:.0f}, Y:{error_y:.0f})")
+                print(f"[{i}/{len(test_cases)}] FAIL {post_image_file.name} - Error: {error_total:.1f}px (X:{error_x:.0f}, Y:{error_y:.0f})")
     
     # Print summary
     print()

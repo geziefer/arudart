@@ -34,8 +34,8 @@ def mouse_callback(event, x, y, flags, param):
 
 
 def get_unannotated_images(recordings_dir):
-    """Find all images without matching ground truth JSON files."""
-    image_files = sorted(recordings_dir.glob("*.jpg"))
+    """Find all POST images without matching ground truth JSON files."""
+    image_files = sorted(recordings_dir.glob("*_post.jpg"))
     unannotated = []
     
     for img_file in image_files:

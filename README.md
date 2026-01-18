@@ -63,28 +63,31 @@ python main.py --dev-mode --manual-test
 
 ### Recording Mode (Regression Test Dataset)
 
-Capture raw images for regression testing without running detection:
+Capture raw image pairs (pre+post) for regression testing without running detection:
 
 ```bash
 python main.py --dev-mode --record-mode
 ```
 
 **Workflow:**
-1. Place dart(s) on board
-2. Press `c` to capture
-3. Type description in overlay (e.g., "sector_20_triple")
-4. Press Enter to save
-5. Repeat for next recording
+1. Press `c` to capture PRE frame (clean board)
+2. Place dart(s) on board
+3. Press `c` to capture POST frame (with dart)
+4. Type description in overlay (e.g., "BS1", "T20")
+5. Press Enter to save
+6. Repeat for next recording
 
 **Output:**
 - Images saved to `data/recordings/`
-- Format: `001_cam0_sector_20_triple.jpg`, `001_cam1_sector_20_triple.jpg`, etc.
+- Format: 
+  - `001_cam0_BS1_pre.jpg` (clean board)
+  - `001_cam0_BS1_post.jpg` (with dart)
 - Auto-increments recording number
 
 **Use cases:**
-- Build regression test dataset
+- Build regression test dataset with matched lighting
 - Record edge cases
-- Quick image capture without detection overhead
+- Paired images ensure reliable regression tests
 
 **Next steps:**
 1. **Annotate ground truth:** `python tools/annotate_ground_truth.py`
@@ -101,25 +104,24 @@ python tools/run_regression_tests.py
 ```
 
 **Prerequisites:**
-- Annotated ground truth files in `data/testimages/` (`.json` for each image)
-- Pre-images in `data/`:
-  - `cam0_pre.jpg` - Clean board from camera 0
-  - `cam1_pre.jpg` - Clean board from camera 1
-  - `cam2_pre.jpg` - Clean board from camera 2
+- Annotated ground truth files in `data/testimages/` (`.json` for each POST image)
+- Paired pre/post images in `data/testimages/`:
+  - `001_cam0_BS1_pre.jpg` - Clean board
+  - `001_cam0_BS1_post.jpg` - With dart (annotated)
+  - `001_cam0_BS1_post.json` - Ground truth
 
 **Directory structure:**
 ```
 data/
-├── cam0_pre.jpg          # Clean board images
-├── cam1_pre.jpg
-├── cam2_pre.jpg
 ├── recordings/           # Working directory (recording + annotation)
-│   ├── 001_cam0_BS1.jpg
-│   ├── 001_cam0_BS1.json
+│   ├── 001_cam0_BS1_pre.jpg
+│   ├── 001_cam0_BS1_post.jpg
+│   ├── 001_cam0_BS1_post.json
 │   └── ...
 └── testimages/           # Test dataset (organized, ready for regression tests)
-    ├── 001_cam0_BS1.jpg
-    ├── 001_cam0_BS1.json
+    ├── 001_cam0_BS1_pre.jpg
+    ├── 001_cam0_BS1_post.jpg
+    ├── 001_cam0_BS1_post.json
     └── ...
 ```
 
