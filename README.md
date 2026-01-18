@@ -88,7 +88,61 @@ python main.py --dev-mode --record-mode
 
 **Next steps:**
 1. **Annotate ground truth:** `python tools/annotate_ground_truth.py`
-2. Run regression tests: `python tools/run_regression_tests.py` (to be implemented)
+2. **Run regression tests:** `python tools/run_regression_tests.py`
+
+---
+
+### Regression Testing
+
+After recording and annotating images, run automated regression tests:
+
+```bash
+python tools/run_regression_tests.py
+```
+
+**Prerequisites:**
+- Annotated ground truth files in `data/testimages/` (`.json` for each image)
+- Pre-images in `data/`:
+  - `cam0_pre.jpg` - Clean board from camera 0
+  - `cam1_pre.jpg` - Clean board from camera 1
+  - `cam2_pre.jpg` - Clean board from camera 2
+
+**Directory structure:**
+```
+data/
+├── cam0_pre.jpg          # Clean board images
+├── cam1_pre.jpg
+├── cam2_pre.jpg
+├── recordings/           # Working directory (recording + annotation)
+│   ├── 001_cam0_BS1.jpg
+│   ├── 001_cam0_BS1.json
+│   └── ...
+└── testimages/           # Test dataset (organized, ready for regression tests)
+    ├── 001_cam0_BS1.jpg
+    ├── 001_cam0_BS1.json
+    └── ...
+```
+
+**What it does:**
+1. Loads pre-images (clean board) for each camera
+2. For each test image:
+   - Runs detection (pre-image + test image)
+   - Compares detected tip with ground truth
+   - Reports pass/fail (10px tolerance)
+3. Generates summary statistics:
+   - Overall pass rate
+   - Per-camera pass rate
+   - Per-ring pass rate (BS, SS, D, T, SB, DB)
+
+**Output:**
+- Console: Real-time test results
+- `tests/regression_report.txt`: Summary report
+
+**Use cases:**
+- Verify detection quality after code changes
+- Catch regressions before committing
+- Measure detection accuracy per sector type
+- Baseline for future optimizations
 
 ---
 
