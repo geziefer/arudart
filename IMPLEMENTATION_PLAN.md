@@ -941,51 +941,111 @@ python tools/run_regression_tests.py  # Compare
 
 ### ⬜ Step 8: Event State Machine (Throw vs Pull-Out)
 **Status**: NOT STARTED  
-**Goal**: Recognize throw sequence: idle → impact → dart present → pull-out → idle
+**Goal**: Recognize throw sequence: idle → impact → dart present → pull-out → idle, handling all real-game scenarios
 
 #### Tasks:
 - [ ] Add state machine config to `config.toml`:
   - [ ] Settled timeout (ms)
   - [ ] Pull-out motion threshold
   - [ ] Pull-out timeout (ms)
+  - [ ] Dart movement threshold (px) for detecting moved vs new darts
+  - [ ] Throw timeout (ms) for miss detection
+  - [ ] Dart presence check interval (ms) for bounce-out detection
+- [ ] Implement `events/event_model.py`:
+  - [ ] `DartHitEvent` - new dart detected
+  - [ ] `DartRemovedEvent` - darts removed (full or partial)
+  - [ ] `DartBounceOutEvent` - dart fell off without pull-out (NEW)
+  - [ ] `ThrowMissEvent` - motion detected but no dart found (NEW)
 - [ ] Implement `events/state_machine.py`:
   - [ ] `DartboardState` enum: Idle, ThrowInProgress, DartPresent, PullOutInProgress
   - [ ] `StateMachine` class:
     - [ ] Current state tracking
+    - [ ] **Known dart positions tracking** (for multi-dart scenarios)
+    - [ ] **Dart count tracking** (0-3 darts)
     - [ ] Transition logic
     - [ ] Timeout handling
-  - [ ] Transitions:
-    - [ ] Idle → ThrowInProgress: strong motion detected
-    - [ ] ThrowInProgress → DartPresent: motion settled + dart detected
-    - [ ] DartPresent → PullOutInProgress: motion near dart location
-    - [ ] PullOutInProgress → Idle: motion stopped + dart gone
-  - [ ] Event emission:
-    - [ ] Emit `DartHitEvent` on enter DartPresent
-    - [ ] Emit `DartRemovedEvent` on enter Idle from PullOutInProgress
+  - [ ] **State: Idle** (no darts on board)
+    - [ ] Transition: Motion detected → ThrowInProgress
+  - [ ] **State: DartPresent** (1-3 darts on board, stable)
+    - [ ] Transition: Motion detected → ThrowInProgress (new throw)
+    - [ ] Transition: Motion near known darts → PullOutInProgress (pull-out)
+    - [ ] **Periodic dart presence check** (every 1 second):
+      - [ ] Detect all current darts
+      - [ ] Compare with known positions
+      - [ ] If dart disappeared → emit `DartBounceOutEvent`, update known positions
+      - [ ] If all darts gone → transition to Idle
+  - [ ] **State: ThrowInProgress** (motion detected, waiting for dart)
+    - [ ] Transition: Motion settled + new dart detected → DartPresent (emit `DartHitEvent`)
+    - [ ] Transition: Motion settled + no new dart → back to previous state (emit `ThrowMissEvent`)
+    - [ ] **Timeout** (2 seconds): If no dart detected → back to previous state (emit `ThrowMissEvent`)
+  - [ ] **State: PullOutInProgress** (motion near darts, waiting for removal)
+    - [ ] Transition: Motion stopped + all darts gone → Idle (emit `DartRemovedEvent`)
+    - [ ] Transition: Motion stopped + some darts remain → DartPresent (emit `DartRemovedEvent` for removed darts)
+    - [ ] Transition: Motion stopped + same darts → DartPresent (false alarm)
+    - [ ] **Update known positions** after motion stops
+  - [ ] **Dart movement detection:**
+    - [ ] Store known dart positions after each detection
+    - [ ] On next throw, compare detected positions with known positions
+    - [ ] **New dart** = position not near any known dart (>30px away) → emit event
+    - [ ] **Moved dart** = position near known dart (<30px away) → ignore
+    - [ ] Update known positions with new dart
+    - [ ] Clear known positions on full pull-out (transition to Idle)
 - [ ] Integrate state machine into main loop:
   - [ ] Feed motion detection results
-  - [ ] Feed dart detection results
+  - [ ] Feed dart detection results (all cameras fused)
   - [ ] Handle state transitions
   - [ ] Emit events
+  - [ ] Run periodic checks (dart presence, timeouts)
 - [ ] Update logging:
   - [ ] Log state transitions
-  - [ ] Log event emissions
+  - [ ] Log event emissions (hit, removed, bounce-out, miss)
+  - [ ] Log known dart positions and count
+  - [ ] Log moved vs new dart decisions
 
 #### Verification:
 - [ ] Test full sequence: throw → settle → pull-out
 - [ ] Verify state transitions match physical actions
-- [ ] Confirm exactly one DartHitEvent and one DartRemovedEvent per throw
+- [ ] Confirm exactly one DartHitEvent per throw
 - [ ] Test with 3 consecutive darts
+- [ ] **Test TC8.1: Bounce-out** - dart falls off during game
+  - [ ] Verify DartBounceOutEvent emitted
+  - [ ] Verify known positions updated
+  - [ ] Verify system ready for next throw
+- [ ] **Test TC8.2: Throw miss** - motion but dart misses board
+  - [ ] Verify ThrowMissEvent emitted
+  - [ ] Verify system returns to previous state
+- [ ] **Test TC8.3: Partial pull-out** - remove 1 of 3 darts
+  - [ ] Verify DartRemovedEvent with correct count
+  - [ ] Verify system stays in DartPresent with 2 darts
+- [ ] **Test TC8.4: Full pull-out** - remove all 3 darts
+  - [ ] Verify DartRemovedEvent emitted
+  - [ ] Verify transition to Idle
+- [ ] **Test TC8.5: "180 scenario"** - 3 darts in T20 where 3rd dart pushes 1st/2nd
+  - [ ] Verify only 3 DartHitEvents (not 5-6 from moved darts)
+  - [ ] Verify moved darts are ignored
+  - [ ] Verify new dart correctly identified
+- [ ] **Test TC8.6: Dart visible in some cameras only**
+  - [ ] Verify detection works with ≥1 camera
+  - [ ] Verify fusion handles missing camera data
 
 #### Success Criteria:
 - Consistent state flow for each throw
 - Events emitted at correct times
 - No missed or duplicate events
 - Handles 3-dart sequence correctly
+- **Correctly distinguishes new darts from moved darts in grouped scenarios (180)**
+- **Handles bounce-out without false positives**
+- **Handles throw misses gracefully**
+- **Handles partial and full pull-out correctly**
+- **Robust to camera blind spots (≥1 camera detection)**
 
 #### Notes:
 - Pull-out detection may need tuning (motion threshold, location)
-- Consider dart location history for pull-out validation
+- Dart presence check interval (1 second) balances responsiveness and CPU
+- **Dart movement detection critical for real gameplay** (grouped darts in T20, T19, bull)
+- Movement threshold (30px) should be larger than tip position error (20-30px) but smaller than dart spacing
+- Throw timeout (2 seconds) allows for slow/bouncing throws
+- Bounce-out detection prevents false "dart still there" state
 
 ---
 

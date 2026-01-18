@@ -265,6 +265,8 @@
 16. **Previous dart masking causes more problems than it solves** - in multi-camera mode, masking blocks legitimate new darts, fusion handles duplicates better
 17. **Visible tip portion often missing from contour** - morphological closing bridges barrel-to-board gap, contour ends at barrel bottom not actual tip insertion point
 18. **Tip position error is systematic** - 20-30px offset is consistent across cameras, can be corrected by fusion averaging or calibration offset
+19. **Dart movement in grouped throws is expected** - when 3rd dart hits T20, it often pushes 1st/2nd dart slightly, must distinguish new dart from moved darts
+20. **Position tracking solves movement detection** - store known dart positions, compare with new detections, ignore positions within 30px of known darts (moved), only emit events for truly new positions
 
 ---
 
