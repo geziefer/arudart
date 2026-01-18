@@ -100,8 +100,18 @@ python main.py --dev-mode --record-mode
 After recording and annotating images, run automated regression tests:
 
 ```bash
+# Run with default tolerance (10 pixels)
 python tools/run_regression_tests.py
+
+# Run with custom tolerance
+python tools/run_regression_tests.py --tolerance 20
 ```
+
+**Options:**
+- `--tolerance PIXELS` - Position error tolerance in pixels (default: 10)
+  - 10px: Strict (2-3mm on board)
+  - 20px: Moderate (4-6mm on board)
+  - 30px: Loose (7-9mm on board)
 
 **Prerequisites:**
 - Annotated ground truth files in `data/testimages/` (`.json` for each POST image)

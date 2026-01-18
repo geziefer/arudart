@@ -6,12 +6,16 @@ Tests dart detection against ground truth annotations.
 Runs detection on recorded images and compares with human-annotated tip positions.
 
 Usage:
-    python tools/run_regression_tests.py
+    python tools/run_regression_tests.py [--tolerance PIXELS]
+    
+Options:
+    --tolerance PIXELS    Position error tolerance in pixels (default: 10)
 """
 
 import cv2
 import json
 import sys
+import argparse
 from pathlib import Path
 import numpy as np
 
@@ -75,6 +79,14 @@ def run_detection(detector, pre_image, post_image):
 
 
 def main():
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Run regression tests on dart detection')
+    parser.add_argument('--tolerance', type=int, default=10,
+                       help='Position error tolerance in pixels (default: 10)')
+    args = parser.parse_args()
+    
+    tolerance = args.tolerance
+    
     print("=" * 70)
     print("ARU-DART Regression Test Suite")
     print("=" * 70)
@@ -113,7 +125,7 @@ def main():
         return
     
     print(f"Found {len(test_cases)} test cases")
-    print(f"Tolerance: 10 pixels")
+    print(f"Tolerance: {tolerance} pixels")
     print()
     
     # Run tests
@@ -127,8 +139,6 @@ def main():
                        2: {"total": 0, "passed": 0}},
         "per_ring": {}
     }
-    
-    tolerance = 10  # pixels
     
     for i, test_case in enumerate(test_cases, 1):
         pre_image_file = test_case["pre_image_file"]
