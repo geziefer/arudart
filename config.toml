@@ -53,4 +53,4 @@ blur_kernel = 3  # Smaller blur to preserve dart details
 min_dart_area = 50  # Lower minimum (dart might be small)
 max_dart_area = 10000  # Increased - dart with flight can be large
 min_shaft_length = 15  # Lower minimum length
-aspect_ratio_min = 1.2  # Much lower - dart from angle might not be very elongated
+aspect_ratio_min = 1.0  # Lowered from 1.2 - darts at angles appear shorter/wider

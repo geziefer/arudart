@@ -124,6 +124,8 @@ def main():
     throw_count = 0
     last_logged_motion = 0  # Track last logged motion value to reduce spam
     paused = False  # Pause/play for manual dart placement testing
+    reset_message_time = 0  # Track when reset message was shown
+    reset_message_duration = 2.0  # Show reset message for 2 seconds
     
     # Create session folder for this run
     session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -169,10 +171,15 @@ def main():
             
             # Initialize background on first frames
             if not background_initialized and len(frames) == len(camera_ids):
-                # Don't auto-initialize - wait for manual 'r' press
-                # This ensures clean board without person in frame
-                logger.info("=== Ready to initialize background - press 'r' when board is clear ===")
-                background_initialized = "waiting"  # Flag to show message only once
+                # Auto-initialize background after 2 seconds (allow cameras to stabilize)
+                if current_time - start_time > 2.0:
+                    logger.info("Auto-initializing background...")
+                    for camera_id, frame in frames.items():
+                        motion_detector.update_background(camera_id, frame)
+                        background_model.update_pre_impact(camera_id, frame)
+                    background_initialized = True
+                    reset_message_time = current_time
+                    logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
             
             # Check motion at intervals (only when not paused)
             if not paused and background_initialized == True and current_time - last_motion_check >= motion_check_interval:
@@ -310,12 +317,17 @@ def main():
                     display_frame = frame.copy()
                     fps = fps_counters[camera_id].get_fps()
                     
-                    # Add FPS and motion state overlay
+                    # Add FPS overlay
                     cv2.putText(display_frame, f"Camera {camera_id} - FPS: {fps:.1f}", (10, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    # Add state text with pause/reset indicators
                     state_text = f"State: {motion_state}"
-                    if args.manual_test and paused:
-                        state_text += " [PAUSED]"
+                    if args.manual_test:
+                        if paused:
+                            state_text += " [PAUSED]"
+                        if current_time - reset_message_time < reset_message_duration:
+                            state_text += " [BACKGROUND RESET]"
                     cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     
@@ -366,6 +378,7 @@ def main():
                     
                     background_initialized = True
                     last_detection_time = 0  # Reset cooldown
+                    reset_message_time = current_time  # Show reset message
                     logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
                 elif key == ord('p'):
                     # Toggle pause for manual dart placement (only in manual test mode)
