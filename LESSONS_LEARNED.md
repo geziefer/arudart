@@ -262,6 +262,9 @@
 13. **Geometric blind spots are expected** - 120° camera spacing creates edge-on views when dart is close to one camera
 14. **Multi-camera redundancy is essential** - at least 2/3 cameras detect in 75% of cases, fusion will handle outliers
 15. **Two-step threshold has limits** - can't fix geometric invisibility, only helps with weak signals
+16. **Previous dart masking causes more problems than it solves** - in multi-camera mode, masking blocks legitimate new darts, fusion handles duplicates better
+17. **Visible tip portion often missing from contour** - morphological closing bridges barrel-to-board gap, contour ends at barrel bottom not actual tip insertion point
+18. **Tip position error is systematic** - 20-30px offset is consistent across cameras, can be corrected by fusion averaging or calibration offset
 
 ---
 

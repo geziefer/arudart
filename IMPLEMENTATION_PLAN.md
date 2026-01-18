@@ -638,6 +638,17 @@ python main.py --dev-mode --manual-test --show-histogram
 **Status**: NOT STARTED  
 **Goal**: Combine per-camera detections into single board coordinate and derive score
 
+#### Potential Optimizations (Optional, Phase 1):
+- **Targeted tip search refinement:**
+  - After detecting barrel+flight, search for metallic tip in focused ROI
+  - Use edge detection (Canny) in 20mm region beyond detected tip
+  - Look for thin elongated structure aligned with barrel axis
+  - Extend tip position if found, improving accuracy by 5-10mm
+  - Non-destructive: fallback to original detection if tip not found
+  - **Benefit:** Captures visible tip portion (5-10mm between barrel and board)
+  - **Effort:** 2-3 hours implementation
+  - **Priority:** Low - fusion + calibration may be sufficient
+
 #### Tasks:
 - [ ] Implement fusion logic in `processing/coordinate_mapping.py`:
   - [ ] Input: list of per-camera detections with coordinates and confidence

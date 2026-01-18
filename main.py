@@ -246,7 +246,7 @@ def main():
                                 logger.warning(f"No post frame available for camera {camera_id}")
                                 continue
                             
-                            tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(pre_frame, post_frame)
+                            tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(pre_frame, post_frame, mask_previous=False)
                             
                             detections[camera_id] = {
                                 'tip_x': tip_x,

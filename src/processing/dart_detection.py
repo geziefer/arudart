@@ -137,7 +137,7 @@ class DartDetector:
             # Circularity: 1.0 = perfect circle, 0.0 = line
             # Dart should be elongated (low circularity)
             circularity = 4 * np.pi * area / (perimeter * perimeter)
-            if circularity > 0.7:  # Relaxed from 0.5 - allow more circular shapes
+            if circularity > 0.8:  # Relaxed from 0.7 - allow bulky flights in multi-dart scenarios
                 self.logger.debug(f"Rejected: too circular ({circularity:.2f})")
                 continue
             
@@ -148,7 +148,7 @@ class DartDetector:
             if hull_area == 0:
                 continue
             solidity = area / hull_area
-            if solidity < 0.5:  # Relaxed from 0.7 - allow more irregular shapes
+            if solidity < 0.4:  # Relaxed from 0.5 - allow fragmented flights
                 self.logger.debug(f"Rejected: too hollow (solidity={solidity:.2f})")
                 continue
             
