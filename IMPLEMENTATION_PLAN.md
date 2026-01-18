@@ -635,13 +635,16 @@ python main.py --dev-mode --record-mode
 - [ ] Save ground truth as JSON:
   ```json
   {
-    "image": "cam0_001_sector_20_triple.jpg",
+    "image": "001_cam0_BS_20.jpg",
     "tip_x": 450,
     "tip_y": 280,
-    "description": "sector_20_triple"
+    "description": "BS_20",
+    "expected_ring": "BS",
+    "expected_number": 20
   }
   ```
-  Saved as: `cam0_001_sector_20_triple.json`
+  Saved as: `001_cam0_BS_20.json`
+  - Automatically parses sector from filename (BS_20, T_19, SB, DB, etc.)
 - [ ] After annotating all 3 cameras of one throw, move to next throw
 
 **Usage:**

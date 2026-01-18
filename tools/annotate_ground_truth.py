@@ -166,11 +166,50 @@ def annotate_image(img_file):
             return 'quit'
 
 
+def parse_sector_from_description(description):
+    """
+    Parse sector information from description.
+    
+    Examples:
+        "BS_20" or "BS20" -> {"ring": "BS", "number": 20}
+        "T_20" or "T20" -> {"ring": "T", "number": 20}
+        "SB_right" or "SB-up" -> {"ring": "SB", "number": 25}
+        "DB" -> {"ring": "DB", "number": 50}
+    
+    Returns:
+        dict with "ring" and "number", or None if can't parse
+    """
+    # Handle bulls first (special cases)
+    if description.upper().startswith("SB"):
+        return {"ring": "SB", "number": 25}
+    elif description.upper() == "DB":
+        return {"ring": "DB", "number": 50}
+    
+    # Try to extract ring and number
+    # Support both "BS_20" and "BS20" formats
+    import re
+    match = re.match(r'^([A-Z]+)[-_]?(\d+)', description.upper())
+    
+    if match:
+        ring = match.group(1)
+        try:
+            number = int(match.group(2))
+            if 1 <= number <= 20:
+                return {"ring": ring, "number": number}
+        except ValueError:
+            pass
+    
+    return None
+
+
 def save_ground_truth(img_file, tip_x, tip_y):
     """Save ground truth JSON file."""
     # Extract description from filename
     parts = img_file.stem.split('_', 2)  # Split into [number, cam, description]
     description = parts[2] if len(parts) >= 3 else "unknown"
+    
+    # Parse sector information
+    sector_info = parse_sector_from_description(description)
     
     ground_truth = {
         "image": img_file.name,
@@ -179,11 +218,21 @@ def save_ground_truth(img_file, tip_x, tip_y):
         "description": description
     }
     
+    # Add sector information if parsed successfully
+    if sector_info:
+        ground_truth["expected_ring"] = sector_info["ring"]
+        ground_truth["expected_number"] = sector_info["number"]
+    
     json_file = img_file.with_suffix('.json')
     with open(json_file, 'w') as f:
         json.dump(ground_truth, f, indent=2)
     
-    print(f"Saved: {json_file.name}")
+    print(f"Saved: {json_file.name}", end="")
+    if sector_info:
+        print(f" [{sector_info['ring']}_{sector_info['number']}]")
+    else:
+        print()
+
 
 
 def main():

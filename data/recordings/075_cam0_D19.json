@@ -2,5 +2,7 @@
   "image": "075_cam0_D19.jpg",
   "tip_x": 331,
   "tip_y": 41,
-  "description": "D19"
+  "description": "D19",
+  "expected_ring": "D",
+  "expected_number": 19
 }

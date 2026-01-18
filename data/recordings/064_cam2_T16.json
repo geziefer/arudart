@@ -2,5 +2,7 @@
   "image": "064_cam2_T16.jpg",
   "tip_x": 515,
   "tip_y": 269,
-  "description": "T16"
+  "description": "T16",
+  "expected_ring": "T",
+  "expected_number": 16
 }

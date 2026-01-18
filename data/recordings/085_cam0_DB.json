@@ -2,5 +2,7 @@
   "image": "085_cam0_DB.jpg",
   "tip_x": 396,
   "tip_y": 192,
-  "description": "DB"
+  "description": "DB",
+  "expected_ring": "DB",
+  "expected_number": 50
 }

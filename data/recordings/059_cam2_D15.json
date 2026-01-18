@@ -2,5 +2,7 @@
   "image": "059_cam2_D15.jpg",
   "tip_x": 541,
   "tip_y": 55,
-  "description": "D15"
+  "description": "D15",
+  "expected_ring": "D",
+  "expected_number": 15
 }

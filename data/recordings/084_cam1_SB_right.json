@@ -2,5 +2,7 @@
   "image": "084_cam1_SB_right.jpg",
   "tip_x": 388,
   "tip_y": 303,
-  "description": "SB_right"
+  "description": "SB_right",
+  "expected_ring": "SB",
+  "expected_number": 25
 }

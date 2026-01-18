@@ -114,8 +114,27 @@ python tools/annotate_ground_truth.py
 - `q` - Quit annotation session
 
 **Output:**
-- Creates JSON file for each image: `001_cam0_sector_20_triple.json`
-- Format: `{"image": "...", "tip_x": 450, "tip_y": 280, "description": "..."}`
+- Creates JSON file for each image: `001_cam0_BS_20.json`
+- Format:
+  ```json
+  {
+    "image": "001_cam0_BS_20.jpg",
+    "tip_x": 450,
+    "tip_y": 280,
+    "description": "BS_20",
+    "expected_ring": "BS",
+    "expected_number": 20
+  }
+  ```
+- Automatically parses sector from filename (BS_20, T_19, SB, DB, etc.)
+
+**Supported sector formats:**
+- `BS_<number>` - Big Single (1-20)
+- `SS_<number>` - Small Single (1-20)
+- `D_<number>` - Double (1-20)
+- `T_<number>` - Triple (1-20)
+- `SB` or `SB_<direction>` - Single Bull (25)
+- `DB` - Double Bull (50)
 
 **Features:**
 - Shows crosshair at mouse position for precision

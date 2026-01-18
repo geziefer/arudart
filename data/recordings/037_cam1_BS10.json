@@ -2,5 +2,7 @@
   "image": "037_cam1_BS10.jpg",
   "tip_x": 535,
   "tip_y": 401,
-  "description": "BS10"
+  "description": "BS10",
+  "expected_ring": "BS",
+  "expected_number": 10
 }

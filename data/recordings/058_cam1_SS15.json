@@ -2,5 +2,7 @@
   "image": "058_cam1_SS15.jpg",
   "tip_x": 423,
   "tip_y": 368,
-  "description": "SS15"
+  "description": "SS15",
+  "expected_ring": "SS",
+  "expected_number": 15
 }
