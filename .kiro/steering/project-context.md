@@ -47,3 +47,33 @@ Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° interva
 - **Manual testing**: `--manual-test` flag for pause/play controlled testing
 - **Single camera**: `--single-camera N` for per-camera validation
 - **Recording mode**: `--record-mode` for regression test dataset capture
+
+## Spec-Driven Development Guidelines
+
+### Design Document Style
+
+- **High-level architecture**: Design documents should focus on architecture, algorithms, and data flow
+- **Pseudocode over Python**: Use pseudocode or high-level descriptions instead of extensive Python code
+- **Interface definitions**: Show method signatures and data structures, not full implementations
+- **Algorithm descriptions**: Describe algorithms in plain language or pseudocode, not complete code
+- **Keep it concise**: Design documents should be readable and maintainable, not code repositories
+
+**Example - Good (pseudocode)**:
+```
+fuse_detections(detections):
+    1. Filter by minimum confidence
+    2. If single detection: return directly
+    3. If multiple: compute weighted average
+    4. Return fused position
+```
+
+**Example - Avoid (extensive Python)**:
+```python
+def fuse_detections(self, detections: list[dict]) -> tuple[float, float, float, list[int]] | None:
+    valid_detections = [d for d in detections if d['confidence'] >= self.min_confidence]
+    if len(valid_detections) == 0:
+        return None
+    # ... 50 more lines of implementation ...
+```
+
+**Rationale**: Design documents are for understanding architecture and approach. Full implementations belong in the actual code files during task execution.
