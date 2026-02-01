@@ -27,11 +27,20 @@ from src.config import load_config
 
 
 def load_test_cases(testimages_dir):
-    """Load all test cases (POST images with ground truth JSON) from testimages and subdirectories."""
+    """Load all test cases (POST images with ground truth JSON) from testimages and subdirectories.
+    
+    Expected format: 
+    - Images: <description>_camX_post.jpg
+    - Ground truth: <description>_camX.json (without _post suffix)
+    Example: BS20_cam0_post.jpg → BS20_cam0.json
+    """
     test_cases = []
     
-    # Find all JSON files recursively (only for POST images)
-    json_files = sorted(testimages_dir.rglob("*_post.json"))
+    # Find all JSON files recursively (ground truth files without _post suffix)
+    json_files = sorted(testimages_dir.rglob("*_cam*.json"))
+    
+    # Filter out files that have _post in the name (old format)
+    json_files = [f for f in json_files if '_post' not in f.stem]
     
     for json_file in json_files:
         # Load ground truth
@@ -50,10 +59,10 @@ def load_test_cases(testimages_dir):
             print(f"Warning: PRE image not found: {ground_truth['image_pre']}")
             continue
         
-        # Extract camera ID from filename (e.g., "001_cam0_BS1_post.jpg" -> 0)
-        parts = post_image_file.stem.split('_')
-        if len(parts) >= 2 and parts[1].startswith('cam'):
-            cam_id = int(parts[1][3])  # Extract number from "cam0"
+        # Extract camera ID from filename (e.g., "BS20_cam0_post.jpg" -> 0)
+        parts = post_image_file.stem.split('_cam')
+        if len(parts) >= 2:
+            cam_id = int(parts[1][0])  # Extract number after "cam"
             test_cases.append({
                 "pre_image_file": pre_image_file,
                 "post_image_file": post_image_file,

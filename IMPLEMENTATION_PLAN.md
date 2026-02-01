@@ -585,28 +585,20 @@ python main.py --dev-mode --manual-test --show-histogram
 **Purpose:** Quickly capture pre/post image pairs with descriptive names
 
 **Implementation:**
-- [x] Add `--record-mode` flag to main.py
+- [ ] Add `--record-mode` flag to main.py
 - [x] Behavior:
   - Press 'r' to capture **pre-frame** (clean board)
   - Place dart(s) manually
   - Press 'c' to capture **post-frame** (with dart)
-  - Enter description in console
+  - Enter description in camera window overlay
 - [x] On capture:
   - Save **both** pre and post frames from all 3 cameras
-  - Prompt for description in console
+  - Show input overlay in camera window for description
   - User types description (e.g., "T20", "bull", "two_darts_crossing")
-  - Save images as:
-    ```
-    data/recordings/001_cam0_pre_T20.jpg
-    data/recordings/001_cam0_post_T20.jpg
-    data/recordings/001_cam1_pre_T20.jpg
-    data/recordings/001_cam1_post_T20.jpg
-    data/recordings/001_cam2_pre_T20.jpg
-    data/recordings/001_cam2_post_T20.jpg
-    ```
-  - Auto-increment number (001, 002, 003...)
+  - Save images as: `{description}_cam{0,1,2}_{pre|post}.jpg`
+  - Description becomes the filename prefix
   - No detection, no thresholding, just raw capture + naming
-- [x] Continue recording next throw (002, 003, etc.)
+- [x] Continue recording next throw with different description
 
 **Usage:**
 ```bash
@@ -616,7 +608,7 @@ python main.py --dev-mode --record-mode
 
 **Output:**
 - All images in flat `data/recordings/` directory
-- Naming: `{number}_cam{0,1,2}_{pre|post}_{description}.jpg`
+- Naming: `{description}_cam{0,1,2}_{pre|post}.jpg`
 - 6 images per recording (3 cameras × 2 frames)
 
 **Why pre/post pairs:** Regression tests need image differencing to match production detection pipeline, accounting for lighting changes over time.
@@ -641,14 +633,14 @@ python main.py --dev-mode --record-mode
 - [x] Save ground truth as JSON:
   ```json
   {
-    "image_post": "001_cam0_post_T20.jpg",
-    "image_pre": "001_cam0_pre_T20.jpg",
+    "image_post": "T20_cam0_post.jpg",
+    "image_pre": "T20_cam0_pre.jpg",
     "tip_x": 450,
     "tip_y": 280,
     "description": "T20"
   }
   ```
-  Saved as: `001_cam0_post_T20.json`
+  Saved as: `T20_cam0.json` (without _post suffix)
 - [x] After annotating all 3 cameras of one throw, move to next throw
 
 **Usage:**

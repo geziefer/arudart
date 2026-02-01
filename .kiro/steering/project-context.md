@@ -11,6 +11,19 @@ Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° interva
 - **LED Ring**: Provides stable, even illumination
 - **Board**: Winmau Blade 6 Triple Core (standard 17" diameter)
 
+## Dartboard Terminology
+
+Standard dartboard scoring abbreviations:
+- **BS** = Big Single (outer single ring, larger area)
+- **SS** = Small Single (inner single ring, smaller area between triple and bull)
+- **T** = Triple (triple ring)
+- **D** = Double (outer double ring)
+- **SB** = Single Bull (outer bull, 25 points)
+- **DB** = Double Bull (inner bull/bullseye, 50 points)
+- **O** = Out (missed the board entirely)
+
+Example: BS20 = Big Single 20 (outer single area of sector 20)
+
 ## Camera Positions
 
 - **cam0**: Upper right (near sector 18)

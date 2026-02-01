@@ -1,20 +1,18 @@
 ARU-DART Regression Test Report
 ======================================================================
 
-Total tests:        255
-Passed:             69 (27.1%)
-Failed (no detect): 67
-Failed (position):  119
+Total tests:        12
+Passed:             10 (83.3%)
+Failed (no detect): 1
+Failed (position):  1
 
 Per-Camera Results:
-  cam0: 1/85 (1.2%)
-  cam1: 15/85 (17.6%)
-  cam2: 53/85 (62.4%)
+  cam0: 3/4 (75.0%)
+  cam1: 4/4 (100.0%)
+  cam2: 3/4 (75.0%)
 
 Per-Ring Results:
-  BS : 14/60 (23.3%)
-  D  : 8/60 (13.3%)
-  DB : 1/3 (33.3%)
-  SB : 3/12 (25.0%)
-  SS : 20/60 (33.3%)
-  T  : 23/60 (38.3%)
+  BS : 2/3 (66.7%)
+  D  : 2/3 (66.7%)
+  SS : 3/3 (100.0%)
+  T  : 3/3 (100.0%)

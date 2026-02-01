@@ -34,12 +34,20 @@ def mouse_callback(event, x, y, flags, param):
 
 
 def get_unannotated_images(recordings_dir):
-    """Find all POST images without matching ground truth JSON files."""
-    image_files = sorted(recordings_dir.glob("*_post.jpg"))
+    """Find all POST images without matching ground truth JSON files.
+    
+    Expected format: <description>_camX_post.jpg
+    Ground truth: <description>_camX.json (without _post suffix)
+    Example: BS20_cam0_post.jpg → BS20_cam0.json
+    """
+    image_files = sorted(recordings_dir.glob("*_cam*_post.jpg"))
     unannotated = []
     
     for img_file in image_files:
-        json_file = img_file.with_suffix('.json')
+        # Ground truth file doesn't have _post suffix
+        json_filename = img_file.name.replace('_post.jpg', '.json')
+        json_file = img_file.parent / json_filename
+        
         if not json_file.exists():
             unannotated.append(img_file)
     
@@ -47,21 +55,28 @@ def get_unannotated_images(recordings_dir):
 
 
 def group_by_recording_number(image_files):
-    """Group images by recording number (e.g., all 001_cam*_*.jpg together)."""
+    """Group images by description (e.g., all BS20_cam*_post.jpg together)."""
     groups = {}
     
     for img_file in image_files:
-        # Extract recording number from filename (e.g., "001" from "001_cam0_description.jpg")
+        # Extract description from filename (e.g., "BS20" from "BS20_cam0_post.jpg")
         parts = img_file.stem.split('_')
-        if len(parts) >= 2 and parts[0].isdigit():
-            rec_num = parts[0]
-            if rec_num not in groups:
-                groups[rec_num] = []
-            groups[rec_num].append(img_file)
+        # Description is everything before first "cam"
+        desc_parts = []
+        for part in parts:
+            if part.startswith('cam'):
+                break
+            desc_parts.append(part)
+        
+        description = '_'.join(desc_parts) if desc_parts else "unknown"
+        
+        if description not in groups:
+            groups[description] = []
+        groups[description].append(img_file)
     
     # Sort each group by camera ID (cam0, cam1, cam2)
-    for rec_num in groups:
-        groups[rec_num].sort()
+    for desc in groups:
+        groups[desc].sort(key=lambda f: f.stem.split('_cam')[1][0])  # Sort by cam number
     
     return groups
 
@@ -204,16 +219,27 @@ def parse_sector_from_description(description):
 
 def save_ground_truth(img_file, tip_x, tip_y):
     """Save ground truth JSON file."""
-    # Extract description from filename
-    parts = img_file.stem.split('_', 2)  # Split into [number, cam, description]
-    description = parts[2] if len(parts) >= 3 else "unknown"
+    # Extract description from filename (e.g., "BS20" from "BS20_cam0_post.jpg")
+    parts = img_file.stem.split('_')
+    
+    # Description is everything before "cam"
+    desc_parts = []
+    for part in parts:
+        if part.startswith('cam'):
+            break
+        desc_parts.append(part)
+    
+    description = '_'.join(desc_parts) if desc_parts else "unknown"
     
     # Parse sector information
     sector_info = parse_sector_from_description(description)
     
+    # Construct pre-image filename (replace 'post' with 'pre')
+    pre_filename = img_file.name.replace('_post.jpg', '_pre.jpg')
+    
     ground_truth = {
         "image_post": img_file.name,
-        "image_pre": img_file.name.replace("_post.jpg", "_pre.jpg"),
+        "image_pre": pre_filename,
         "tip_x": tip_x,
         "tip_y": tip_y,
         "description": description
@@ -224,7 +250,10 @@ def save_ground_truth(img_file, tip_x, tip_y):
         ground_truth["expected_ring"] = sector_info["ring"]
         ground_truth["expected_number"] = sector_info["number"]
     
-    json_file = img_file.with_suffix('.json')
+    # Save JSON without _post suffix (e.g., BS20_cam0.json instead of BS20_cam0_post.json)
+    json_filename = img_file.name.replace('_post.jpg', '.json')
+    json_file = img_file.parent / json_filename
+    
     with open(json_file, 'w') as f:
         json.dump(ground_truth, f, indent=2)
     
@@ -263,10 +292,10 @@ def main():
     skipped_count = 0
     
     # Process each recording group (cam0, cam1, cam2 in sequence)
-    for rec_num in sorted(groups.keys()):
-        images = groups[rec_num]
+    for description in sorted(groups.keys()):
+        images = groups[description]
         
-        print(f"\n--- Recording {rec_num} ({len(images)} cameras) ---")
+        print(f"\n--- Recording: {description} ({len(images)} cameras) ---")
         
         for img_file in images:
             result = annotate_image(img_file)

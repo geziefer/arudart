@@ -127,26 +127,16 @@ def main():
     paused = False  # Pause/play for manual dart placement testing
     reset_message_time = 0  # Track when reset message was shown
     reset_message_duration = 2.0  # Show reset message for 2 seconds
-    recording_number = 1  # Auto-increment number for recordings
-    recording_state = "waiting_for_pre"  # State: waiting_for_pre, waiting_for_post
+    recording_state = "waiting_for_pre"  # State: waiting_for_pre, waiting_for_post, entering_description
     pre_frames = {}  # Store pre-frames for current recording
+    post_frames = {}  # Store post-frames for current recording
+    recording_description = ""  # Current description being typed
     
     # Create recordings folder if in record mode
     if args.record_mode:
         recordings_dir = Path("data/recordings")
         recordings_dir.mkdir(parents=True, exist_ok=True)
-        # Find next recording number
-        existing_recordings = list(recordings_dir.glob("*_cam*.jpg"))
-        if existing_recordings:
-            # Extract numbers from filenames like 001_cam0_description.jpg
-            numbers = []
-            for f in existing_recordings:
-                parts = f.stem.split('_')
-                if len(parts) >= 2 and parts[0].isdigit():
-                    numbers.append(int(parts[0]))
-            if numbers:
-                recording_number = max(numbers) + 1
-        logger.info(f"Recording mode enabled - next recording number: {recording_number:03d}")
+        logger.info(f"Recording mode enabled - save format: <description>_camX_pre|post.jpg")
     
     # Create session folder for this run
     session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -355,11 +345,38 @@ def main():
                             state_text += " [BACKGROUND RESET]"
                     if args.record_mode:
                         if recording_state == "waiting_for_pre":
-                            state_text += f" [REC #{recording_number:03d} - Press 'r' for PRE]"
+                            state_text += f" [REC - Press 'r' for PRE]"
                         elif recording_state == "waiting_for_post":
-                            state_text += f" [REC #{recording_number:03d} - Press 'c' for POST]"
+                            state_text += f" [REC - Press 'c' for POST]"
+                        elif recording_state == "entering_description":
+                            state_text += f" [REC - ENTER NAME]"
                     cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    
+                    # Show input overlay when entering description
+                    if args.record_mode and recording_state == "entering_description":
+                        # Create semi-transparent overlay at bottom
+                        overlay = display_frame.copy()
+                        overlay_height = 120
+                        y_start = display_frame.shape[0] - overlay_height
+                        cv2.rectangle(overlay, (0, y_start), (display_frame.shape[1], display_frame.shape[0]), 
+                                     (0, 0, 0), -1)
+                        cv2.addWeighted(overlay, 0.7, display_frame, 0.3, 0, display_frame)
+                        
+                        # Add instruction text
+                        instruction = "Enter description (e.g., 'T20', 'bull', 'two_darts'):"
+                        cv2.putText(display_frame, instruction, (20, y_start + 30), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                        
+                        # Add current input text with cursor
+                        input_text = recording_description + "_"
+                        cv2.putText(display_frame, input_text, (20, y_start + 70), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        
+                        # Add hint text
+                        hint = "Press ENTER to save, ESC to cancel"
+                        cv2.putText(display_frame, hint, (20, y_start + 105), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
                     
                     # Add exposure info
                     mean_brightness = np.mean(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
@@ -379,6 +396,47 @@ def main():
                 
                 # Check for keypresses (only call waitKey once)
                 key = cv2.waitKey(1) & 0xFF
+                
+                # Handle text input when entering description
+                if args.record_mode and recording_state == "entering_description":
+                    if key == 13:  # Enter key
+                        # Save recording with description
+                        if not recording_description:
+                            recording_description = "unnamed"
+                        
+                        # Save all frames with new naming: description_camX_pre|post.jpg
+                        recordings_dir = Path("data/recordings")
+                        for camera_id in camera_ids:
+                            pre_path = recordings_dir / f"{recording_description}_cam{camera_id}_pre.jpg"
+                            post_path = recordings_dir / f"{recording_description}_cam{camera_id}_post.jpg"
+                            cv2.imwrite(str(pre_path), pre_frames[camera_id])
+                            cv2.imwrite(str(post_path), post_frames[camera_id])
+                        
+                        logger.info(f"=== SAVED recording: {recording_description} ===")
+                        logger.info(f"=== Ready for next recording - Press 'r' for PRE ===")
+                        
+                        # Reset for next recording (no auto-increment needed with name-based scheme)
+                        recording_state = "waiting_for_pre"
+                        pre_frames = {}
+                        post_frames = {}
+                        recording_description = ""
+                        continue
+                    elif key == 27:  # ESC key
+                        # Cancel recording
+                        logger.info("=== Recording cancelled ===")
+                        recording_state = "waiting_for_pre"
+                        pre_frames = {}
+                        post_frames = {}
+                        recording_description = ""
+                        continue
+                    elif key == 8 or key == 127:  # Backspace or Delete
+                        if recording_description:
+                            recording_description = recording_description[:-1]
+                        continue
+                    elif key != 255 and 32 <= key <= 126:  # Printable ASCII characters
+                        recording_description += chr(key)
+                        continue
+                
                 if key == ord('q'):
                     break
                 elif key == ord('r'):
@@ -445,29 +503,13 @@ def main():
                         if frame is not None:
                             post_frames[camera_id] = frame.copy()
                     
-                    # Prompt for description in console
-                    print(f"\n=== Recording {recording_number:03d} ===")
-                    print("Enter description (e.g., 'T20', 'bull', 'two_darts_crossing'): ", end='', flush=True)
-                    description = input().strip()
-                    
-                    if not description:
-                        description = "unnamed"
-                    
-                    # Save all frames
-                    recordings_dir = Path("data/recordings")
-                    for camera_id in camera_ids:
-                        pre_path = recordings_dir / f"{recording_number:03d}_cam{camera_id}_pre_{description}.jpg"
-                        post_path = recordings_dir / f"{recording_number:03d}_cam{camera_id}_post_{description}.jpg"
-                        cv2.imwrite(str(pre_path), pre_frames[camera_id])
-                        cv2.imwrite(str(post_path), post_frames[camera_id])
-                    
-                    logger.info(f"=== SAVED recording {recording_number:03d}: {description} ===")
-                    logger.info(f"=== Ready for next recording - Press 'r' for PRE ===")
-                    
-                    # Reset for next recording
-                    recording_number += 1
-                    recording_state = "waiting_for_pre"
-                    pre_frames = {}
+                    # Switch to description entry mode
+                    recording_state = "entering_description"
+                    recording_description = ""
+                    logger.info("=== Enter description in camera window ===")
+                    continue
+                
+                elif key == ord('p'):
                 
                 elif key == ord('p'):
                     # Toggle pause for manual dart placement (manual test mode only)
