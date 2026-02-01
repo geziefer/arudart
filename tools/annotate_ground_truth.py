@@ -212,7 +212,8 @@ def save_ground_truth(img_file, tip_x, tip_y):
     sector_info = parse_sector_from_description(description)
     
     ground_truth = {
-        "image": img_file.name,
+        "image_post": img_file.name,
+        "image_pre": img_file.name.replace("_post.jpg", "_pre.jpg"),
         "tip_x": tip_x,
         "tip_y": tip_y,
         "description": description

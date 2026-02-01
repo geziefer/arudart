@@ -69,44 +69,30 @@ Capture raw image pairs (pre+post) for regression testing without running detect
 python main.py --dev-mode --record-mode
 ```
 
-**Mode Selection:**
-- Press `1` for single dart recording
-- Press `3` for 3-dart sequence recording
-
-**Single Dart Workflow:**
-1. Press `c` to capture PRE frame (clean board)
+**Workflow:**
+1. Press `r` to capture PRE frame (clean board)
 2. Place dart on board
 3. Press `c` to capture POST frame (with dart)
-4. Type description (e.g., "BS1", "T20")
+4. Type description in console (e.g., "T20", "bull", "two_darts_crossing")
 5. Press Enter to save
-
-**3-Dart Sequence Workflow:**
-1. Press `c` to capture PRE frame (clean board)
-2. Place dart 1
-3. Press `c` to capture POST frame
-4. Type description for dart 1 (e.g., "T20")
-5. Place dart 2 (dart 1 stays)
-6. Press `c` to capture POST frame
-7. Type description for dart 2 (e.g., "T19")
-8. Place dart 3 (dart 1+2 stay)
-9. Press `c` to capture POST frame
-10. Type description for dart 3 (e.g., "T20")
-11. All 6 images saved
+6. Repeat for next recording (auto-increments to #002, #003, etc.)
 
 **Output:**
 - Images saved to `data/recordings/`
-- Single dart format: 
-  - `001_cam0_BS1_throw1_pre.jpg`
-  - `001_cam0_BS1_throw1_post.jpg`
-- 3-dart sequence format:
-  - `001_cam0_T20_throw1_pre.jpg` / `_post.jpg`
-  - `001_cam0_T19_throw2_pre.jpg` / `_post.jpg`
-  - `001_cam0_T20_throw3_pre.jpg` / `_post.jpg`
+- Naming format: `{number}_cam{0,1,2}_{pre|post}_{description}.jpg`
+- Example:
+  - `001_cam0_pre_T20.jpg`
+  - `001_cam0_post_T20.jpg`
+  - `001_cam1_pre_T20.jpg`
+  - `001_cam1_post_T20.jpg`
+  - `001_cam2_pre_T20.jpg`
+  - `001_cam2_post_T20.jpg`
 
-**Use cases:**
-- Single dart: Basic detection testing
-- 3-dart sequence: Multi-dart scenarios, state machine testing
-- Paired images ensure reliable regression tests with matched lighting
+**Next Steps:**
+- Annotate tip positions: `python tools/annotate_ground_truth.py`
+- Run regression tests: `python tools/run_regression_tests.py`
+
+**Why pre/post pairs:** Regression tests use image differencing (same as production detection), accounting for lighting changes over time.
 
 **Next steps:**
 1. **Annotate ground truth:** `python tools/annotate_ground_truth.py`

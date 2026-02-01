@@ -128,11 +128,8 @@ def main():
     reset_message_time = 0  # Track when reset message was shown
     reset_message_duration = 2.0  # Show reset message for 2 seconds
     recording_number = 1  # Auto-increment number for recordings
-    recording_mode_type = None  # "single" or "3dart"
-    recording_state = "select_mode"  # State: select_mode, waiting_for_pre, waiting_for_post
-    throw_number = 1  # Current throw in 3-dart sequence (1, 2, or 3)
+    recording_state = "waiting_for_pre"  # State: waiting_for_pre, waiting_for_post
     pre_frames = {}  # Store pre-frames for current recording
-    throw_descriptions = []  # Store descriptions for 3-dart sequence
     
     # Create recordings folder if in record mode
     if args.record_mode:
@@ -357,18 +354,10 @@ def main():
                         if current_time - reset_message_time < reset_message_duration:
                             state_text += " [BACKGROUND RESET]"
                     if args.record_mode:
-                        if recording_state == "select_mode":
-                            state_text += f" [REC #{recording_number:03d} - Press '1' or '3']"
-                        elif recording_mode_type == "single":
-                            if recording_state == "waiting_for_pre":
-                                state_text += f" [REC #{recording_number:03d} - Press 'c' for PRE]"
-                            elif recording_state == "waiting_for_post":
-                                state_text += f" [REC #{recording_number:03d} - Press 'c' for POST]"
-                        elif recording_mode_type == "3dart":
-                            if recording_state == "waiting_for_pre":
-                                state_text += f" [REC #{recording_number:03d} T{throw_number}/3 - Press 'c' for PRE]"
-                            elif recording_state == "waiting_for_post":
-                                state_text += f" [REC #{recording_number:03d} T{throw_number}/3 - Press 'c' for POST]"
+                        if recording_state == "waiting_for_pre":
+                            state_text += f" [REC #{recording_number:03d} - Press 'r' for PRE]"
+                        elif recording_state == "waiting_for_post":
+                            state_text += f" [REC #{recording_number:03d} - Press 'c' for POST]"
                     cv2.putText(display_frame, state_text, (10, 60), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                     
@@ -393,180 +382,92 @@ def main():
                 if key == ord('q'):
                     break
                 elif key == ord('r'):
-                    # Manual background reset - press 'r' after removing darts or at startup
-                    # Can be used while paused to reset after removing dart
-                    if paused:
-                        logger.info("Resetting background while paused...")
-                    else:
-                        logger.info("Stabilizing camera for 2 seconds...")
-                        time.sleep(2.0)
-                    
-                    # Capture single stable frame
-                    stable_frames = {}
-                    for camera_id in camera_ids:
-                        frame = camera_manager.get_latest_frame(camera_id)
-                        if frame is not None:
-                            stable_frames[camera_id] = frame
-                    
-                    # Update background
-                    for camera_id, frame in stable_frames.items():
-                        motion_detector.update_background(camera_id, frame)
-                        background_model.update_pre_impact(camera_id, frame)
-                    
-                    # Reset previous darts mask for all cameras when capturing new background
-                    for dart_detector in dart_detectors.values():
-                        dart_detector.reset_previous_darts()
-                    
-                    background_initialized = True
-                    last_detection_time = 0  # Reset cooldown
-                    reset_message_time = current_time  # Show reset message
-                    logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
-                elif key == ord('1') or key == ord('3'):
-                    # Select recording mode type (only in record mode, only when selecting)
-                    if not args.record_mode or recording_state != "select_mode":
-                        continue
-                    
-                    if key == ord('1'):
-                        recording_mode_type = "single"
-                        throw_number = 1
-                        logger.info("=== SINGLE DART MODE - Press 'c' for PRE ===")
-                    else:
-                        recording_mode_type = "3dart"
-                        throw_number = 1
-                        throw_descriptions = []
-                        logger.info("=== 3-DART SEQUENCE MODE - Press 'c' for PRE ===")
-                    
-                    recording_state = "waiting_for_pre"
-                
-                elif key == ord('c'):
-                    # Capture in record mode (only in record mode)
-                    if not args.record_mode:
-                        continue
-                    
-                    if recording_state == "select_mode":
-                        logger.info("Please select mode first: Press '1' for single dart, '3' for 3-dart sequence")
-                        continue
-                    
-                    if recording_state == "waiting_for_pre":
-                        # Capture PRE frame (clean board or with existing darts)
-                        if recording_mode_type == "single":
-                            logger.info(f"=== CAPTURING PRE-FRAME for recording {recording_number:03d} ===")
-                        else:
-                            logger.info(f"=== CAPTURING PRE-FRAME for recording {recording_number:03d} throw {throw_number} ===")
+                    # In record mode: capture PRE frame
+                    # In normal/manual-test mode: reset background
+                    if args.record_mode and recording_state == "waiting_for_pre":
+                        # Capture PRE frame (clean board)
+                        logger.info(f"=== CAPTURING PRE-FRAME for recording {recording_number:03d} ===")
                         
                         # Capture current frames from all cameras
                         pre_frames = {}
                         for camera_id in camera_ids:
                             frame = camera_manager.get_latest_frame(camera_id)
                             if frame is not None:
-                                pre_frames[camera_id] = frame
+                                pre_frames[camera_id] = frame.copy()
                         
                         logger.info(f"=== PRE-FRAME CAPTURED - Now place dart and press 'c' for POST ===")
                         recording_state = "waiting_for_post"
-                    
-                    elif recording_state == "waiting_for_post":
-                        # Capture POST frame (with dart)
-                        if recording_mode_type == "single":
-                            logger.info(f"=== CAPTURING POST-FRAME for recording {recording_number:03d} ===")
+                    else:
+                        # Manual background reset - press 'r' after removing darts or at startup
+                        # Can be used while paused to reset after removing dart
+                        if paused:
+                            logger.info("Resetting background while paused...")
                         else:
-                            logger.info(f"=== CAPTURING POST-FRAME for recording {recording_number:03d} throw {throw_number} ===")
+                            logger.info("Stabilizing camera for 2 seconds...")
+                            time.sleep(2.0)
                         
-                        # Capture current frames from all cameras
-                        post_frames = {}
+                        # Capture single stable frame
+                        stable_frames = {}
                         for camera_id in camera_ids:
                             frame = camera_manager.get_latest_frame(camera_id)
                             if frame is not None:
-                                post_frames[camera_id] = frame
+                                stable_frames[camera_id] = frame
                         
-                        # Get text input using OpenCV window overlay
-                        description = ""
-                        input_active = True
+                        # Update background
+                        for camera_id, frame in stable_frames.items():
+                            motion_detector.update_background(camera_id, frame)
+                            background_model.update_pre_impact(camera_id, frame)
                         
-                        while input_active:
-                            # Use first camera for input display
-                            display_cam = sorted(camera_ids)[0]
-                            input_frame = post_frames[display_cam].copy()
-                            
-                            # Draw semi-transparent overlay
-                            overlay = input_frame.copy()
-                            cv2.rectangle(overlay, (50, 200), (750, 350), (0, 0, 0), -1)
-                            cv2.addWeighted(overlay, 0.7, input_frame, 0.3, 0, input_frame)
-                            
-                            # Draw text prompt and input
-                            if recording_mode_type == "single":
-                                cv2.putText(input_frame, f"Recording {recording_number:03d}", (60, 240),
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                            else:
-                                cv2.putText(input_frame, f"Recording {recording_number:03d} - Throw {throw_number}/3", (60, 240),
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                            cv2.putText(input_frame, "Enter description (e.g. T20, BS1):", (60, 280),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-                            cv2.putText(input_frame, f"> {description}_", (60, 320),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                            cv2.putText(input_frame, "Press ENTER to save, ESC to cancel", (60, 340),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
-                            
-                            cv2.imshow(f"Camera {display_cam}", input_frame)
-                            
-                            # Wait for key input
-                            key = cv2.waitKey(0) & 0xFF
-                            
-                            if key == 13:  # Enter
-                                input_active = False
-                            elif key == 27:  # ESC
-                                description = ""
-                                input_active = False
-                            elif key == 8:  # Backspace
-                                description = description[:-1]
-                            elif 32 <= key <= 126:  # Printable ASCII
-                                description += chr(key)
+                        # Reset previous darts mask for all cameras when capturing new background
+                        for dart_detector in dart_detectors.values():
+                            dart_detector.reset_previous_darts()
                         
-                        if description:
-                            # Save images with naming: {number}_cam{id}_{description}_throw{N}_pre/post.jpg
-                            recordings_dir = Path("data/recordings")
-                            
-                            if recording_mode_type == "single":
-                                # Single dart: save with throw1 suffix
-                                for camera_id in sorted(pre_frames.keys()):
-                                    pre_filename = f"{recording_number:03d}_cam{camera_id}_{description}_throw1_pre.jpg"
-                                    post_filename = f"{recording_number:03d}_cam{camera_id}_{description}_throw1_post.jpg"
-                                    cv2.imwrite(str(recordings_dir / pre_filename), pre_frames[camera_id])
-                                    cv2.imwrite(str(recordings_dir / post_filename), post_frames[camera_id])
-                                    logger.info(f"Saved: {pre_filename} and {post_filename}")
-                                
-                                recording_number += 1
-                                recording_state = "select_mode"
-                                logger.info(f"=== RECORDING COMPLETE - Next number: {recording_number:03d} ===")
-                            
-                            else:  # 3-dart mode
-                                # Save current throw
-                                for camera_id in sorted(pre_frames.keys()):
-                                    pre_filename = f"{recording_number:03d}_cam{camera_id}_{description}_throw{throw_number}_pre.jpg"
-                                    post_filename = f"{recording_number:03d}_cam{camera_id}_{description}_throw{throw_number}_post.jpg"
-                                    cv2.imwrite(str(recordings_dir / pre_filename), pre_frames[camera_id])
-                                    cv2.imwrite(str(recordings_dir / post_filename), post_frames[camera_id])
-                                    logger.info(f"Saved: {pre_filename} and {post_filename}")
-                                
-                                throw_descriptions.append(description)
-                                
-                                if throw_number < 3:
-                                    # Continue to next throw - POST becomes PRE
-                                    throw_number += 1
-                                    pre_frames = post_frames.copy()  # POST of this throw = PRE of next throw
-                                    recording_state = "waiting_for_post"  # Skip PRE capture, already have it
-                                    logger.info(f"=== Throw {throw_number-1} complete - Place dart {throw_number} and press 'c' ===")
-                                else:
-                                    # Sequence complete
-                                    recording_number += 1
-                                    throw_number = 1
-                                    throw_descriptions = []
-                                    recording_state = "select_mode"
-                                    logger.info(f"=== 3-DART SEQUENCE COMPLETE - Next number: {recording_number:03d} ===")
-                        else:
-                            logger.info("=== RECORDING CANCELLED (no description entered) ===")
-                            recording_state = "select_mode"
-                            throw_number = 1
-                            throw_descriptions = []
+                        background_initialized = True
+                        last_detection_time = 0  # Reset cooldown
+                        reset_message_time = current_time  # Show reset message
+                        logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
+                elif key == ord('c'):
+                    # Capture POST frame in record mode
+                    if not args.record_mode:
+                        continue
+                    
+                    if recording_state != "waiting_for_post":
+                        logger.info("Please capture PRE frame first: Press 'r'")
+                        continue
+                    
+                    # Capture POST frame (with dart)
+                    logger.info(f"=== CAPTURING POST-FRAME for recording {recording_number:03d} ===")
+                    
+                    # Capture current frames from all cameras
+                    post_frames = {}
+                    for camera_id in camera_ids:
+                        frame = camera_manager.get_latest_frame(camera_id)
+                        if frame is not None:
+                            post_frames[camera_id] = frame.copy()
+                    
+                    # Prompt for description in console
+                    print(f"\n=== Recording {recording_number:03d} ===")
+                    print("Enter description (e.g., 'T20', 'bull', 'two_darts_crossing'): ", end='', flush=True)
+                    description = input().strip()
+                    
+                    if not description:
+                        description = "unnamed"
+                    
+                    # Save all frames
+                    recordings_dir = Path("data/recordings")
+                    for camera_id in camera_ids:
+                        pre_path = recordings_dir / f"{recording_number:03d}_cam{camera_id}_pre_{description}.jpg"
+                        post_path = recordings_dir / f"{recording_number:03d}_cam{camera_id}_post_{description}.jpg"
+                        cv2.imwrite(str(pre_path), pre_frames[camera_id])
+                        cv2.imwrite(str(post_path), post_frames[camera_id])
+                    
+                    logger.info(f"=== SAVED recording {recording_number:03d}: {description} ===")
+                    logger.info(f"=== Ready for next recording - Press 'r' for PRE ===")
+                    
+                    # Reset for next recording
+                    recording_number += 1
+                    recording_state = "waiting_for_pre"
+                    pre_frames = {}
                 
                 elif key == ord('p'):
                     # Toggle pause for manual dart placement (manual test mode only)

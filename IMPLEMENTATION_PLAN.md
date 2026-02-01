@@ -562,7 +562,7 @@ python main.py --dev-mode --manual-test --show-histogram
 ---
 
 ### ⬜ Step 5.5: Regression Test Dataset
-**Status**: NOT STARTED  
+**Status**: IN PROGRESS (Implementation complete, testing pending)  
 **Goal**: Create automated regression tests to verify detection quality after code changes
 
 #### Why This Step:
@@ -582,75 +582,79 @@ python main.py --dev-mode --manual-test --show-histogram
 
 #### Part 1: Recording Mode
 
-**Purpose:** Quickly capture raw images with descriptive names
+**Purpose:** Quickly capture pre/post image pairs with descriptive names
 
 **Implementation:**
-- [ ] Add `--record-mode` flag to main.py
-- [ ] Behavior:
+- [x] Add `--record-mode` flag to main.py
+- [x] Behavior:
+  - Press 'r' to capture **pre-frame** (clean board)
   - Place dart(s) manually
-  - Press 'c' to capture
+  - Press 'c' to capture **post-frame** (with dart)
   - Enter description in console
-- [ ] On capture:
-  - Capture current frame from all 3 cameras (post-frame only, no processing)
+- [x] On capture:
+  - Save **both** pre and post frames from all 3 cameras
   - Prompt for description in console
-  - User types description (e.g., "sector_20_triple", "two_darts_crossing")
+  - User types description (e.g., "T20", "bull", "two_darts_crossing")
   - Save images as:
     ```
-    data/recordings/001_cam0_sector_20_triple.jpg
-    data/recordings/001_cam1_sector_20_triple.jpg
-    data/recordings/001_cam2_sector_20_triple.jpg
+    data/recordings/001_cam0_pre_T20.jpg
+    data/recordings/001_cam0_post_T20.jpg
+    data/recordings/001_cam1_pre_T20.jpg
+    data/recordings/001_cam1_post_T20.jpg
+    data/recordings/001_cam2_pre_T20.jpg
+    data/recordings/001_cam2_post_T20.jpg
     ```
   - Auto-increment number (001, 002, 003...)
   - No detection, no thresholding, just raw capture + naming
-- [ ] Continue recording next throw (002, 003, etc.)
+- [x] Continue recording next throw (002, 003, etc.)
 
 **Usage:**
 ```bash
 python main.py --dev-mode --record-mode
-# Place dart, press 'c', type name, repeat
+# Press 'r' (capture pre), place dart, press 'c' (capture post), type name, repeat
 ```
 
 **Output:**
 - All images in flat `data/recordings/` directory
-- Naming: `{number}_cam{0,1,2}_{description}.jpg`
-- Can organize into subfolders later if needed
+- Naming: `{number}_cam{0,1,2}_{pre|post}_{description}.jpg`
+- 6 images per recording (3 cameras × 2 frames)
+
+**Why pre/post pairs:** Regression tests need image differencing to match production detection pipeline, accounting for lighting changes over time.
 
 ---
 
 #### Part 2: Ground Truth Annotation Tool
 
-**Purpose:** Quickly annotate tip positions by clicking on images
+**Purpose:** Quickly annotate tip positions by clicking on post-frame images
 
 **Implementation:**
-- [ ] Create script: `tools/annotate_ground_truth.py`
-- [ ] Scan `data/recordings/` for images without matching `.json` file
-- [ ] Group images by number (e.g., all `*_001_*` images together)
-- [ ] For each group, display images in order: cam0, cam1, cam2
-- [ ] Display image in OpenCV window
-- [ ] User clicks on dart tip position
-- [ ] Show crosshair on hover for precision
-- [ ] Press 's' to save annotation and move to next camera
-- [ ] Press 'n' to skip image (no dart visible in this camera)
-- [ ] Press 'q' to quit
-- [ ] Save ground truth as JSON:
+- [x] Create script: `tools/annotate_ground_truth.py`
+- [x] Scan `data/recordings/` for `*_post_*.jpg` images without matching `.json` file
+- [x] Group images by number (e.g., all `*_001_*` images together)
+- [x] For each group, display **post-frame** images in order: cam0, cam1, cam2
+- [x] Display image in OpenCV window
+- [x] User clicks on dart tip position
+- [x] Show crosshair on hover for precision
+- [x] Press 's' to save annotation and move to next camera
+- [x] Press 'n' to skip image (no dart visible in this camera)
+- [x] Press 'q' to quit
+- [x] Save ground truth as JSON:
   ```json
   {
-    "image": "001_cam0_BS_20.jpg",
+    "image_post": "001_cam0_post_T20.jpg",
+    "image_pre": "001_cam0_pre_T20.jpg",
     "tip_x": 450,
     "tip_y": 280,
-    "description": "BS_20",
-    "expected_ring": "BS",
-    "expected_number": 20
+    "description": "T20"
   }
   ```
-  Saved as: `001_cam0_BS_20.json`
-  - Automatically parses sector from filename (BS_20, T_19, SB, DB, etc.)
-- [ ] After annotating all 3 cameras of one throw, move to next throw
+  Saved as: `001_cam0_post_T20.json`
+- [x] After annotating all 3 cameras of one throw, move to next throw
 
 **Usage:**
 ```bash
 python tools/annotate_ground_truth.py
-# Click tip position, press 's', repeat for cam0/cam1/cam2
+# Click tip position on post-frame, press 's', repeat for cam0/cam1/cam2
 ```
 
 **Features:**
@@ -664,10 +668,10 @@ python tools/annotate_ground_truth.py
 
 #### Part 3: Regression Test Script
 
-**Purpose:** Automated testing against ground truth
+**Purpose:** Automated testing against ground truth using pre/post pairs
 
 **Implementation:**
-- [ ] Create `tests/test_detection_regression.py`:
+- [x] Create `tests/test_detection_regression.py`:
   ```python
   import pytest
   from pathlib import Path
@@ -680,32 +684,27 @@ python tools/annotate_ground_truth.py
       recordings_dir = Path("data/recordings")
       test_cases = []
       
-      for json_file in sorted(recordings_dir.glob("*.json")):
+      for json_file in sorted(recordings_dir.glob("*_post_*.json")):
           ground_truth = json.load(json_file.open())
-          image_file = recordings_dir / ground_truth["image"]
+          post_file = recordings_dir / ground_truth["image_post"]
+          pre_file = recordings_dir / ground_truth["image_pre"]
           
-          if image_file.exists():
-              test_cases.append((image_file, ground_truth))
+          if post_file.exists() and pre_file.exists():
+              test_cases.append((pre_file, post_file, ground_truth))
       
       return test_cases
   
-  @pytest.mark.parametrize("image_file,ground_truth", load_test_cases())
-  def test_dart_detection(image_file, ground_truth):
-      """Test detection on recorded images."""
-      # Load image
-      post_frame = cv2.imread(str(image_file))
+  @pytest.mark.parametrize("pre_file,post_file,ground_truth", load_test_cases())
+  def test_dart_detection(pre_file, post_file, ground_truth):
+      """Test detection on recorded pre/post image pairs."""
+      pre_frame = cv2.imread(str(pre_file))
+      post_frame = cv2.imread(str(post_file))
       
-      # Create blank pre-frame (simulate clean board)
-      pre_frame = post_frame.copy()  # Or load actual pre-frame if recorded
-      
-      # Run detection
       detector = DartDetector(config)
       tip_x, tip_y, conf, _ = detector.detect(pre_frame, post_frame, mask_previous=False)
       
-      # Verify detection
-      assert tip_x is not None, f"No detection for {image_file.name}"
+      assert tip_x is not None, f"No detection for {post_file.name}"
       
-      # Verify position within tolerance (10px)
       tolerance = 10
       assert abs(tip_x - ground_truth["tip_x"]) < tolerance, \
           f"X position error: {abs(tip_x - ground_truth['tip_x'])}px"
@@ -713,7 +712,7 @@ python tools/annotate_ground_truth.py
           f"Y position error: {abs(tip_y - ground_truth['tip_y'])}px"
   ```
 
-- [ ] Create test runner: `tools/run_regression_tests.py`
+- [x] Create test runner: `tools/run_regression_tests.py`
   - Wrapper around pytest
   - Generates summary report:
     - Total test cases
@@ -734,7 +733,7 @@ pytest tests/test_detection_regression.py -v
 ---
 
 #### Verification:
-- [ ] Record 20+ test images using recording mode
+- [ ] Record some test images using recording mode
 - [ ] Annotate all images using annotation tool
 - [ ] Run regression tests on annotated images
 - [ ] All tests pass (baseline)

@@ -39,17 +39,15 @@ def load_test_cases(testimages_dir):
             ground_truth = json.load(f)
         
         # Check if POST image exists (in same directory as JSON)
-        post_image_file = json_file.parent / ground_truth["image"]
+        post_image_file = json_file.parent / ground_truth["image_post"]
         if not post_image_file.exists():
             continue
         
-        # Find corresponding PRE image
-        # POST: 001_cam0_BS1_post.jpg -> PRE: 001_cam0_BS1_pre.jpg
-        pre_image_name = ground_truth["image"].replace("_post.jpg", "_pre.jpg")
-        pre_image_file = json_file.parent / pre_image_name
+        # Get PRE image from ground truth
+        pre_image_file = json_file.parent / ground_truth["image_pre"]
         
         if not pre_image_file.exists():
-            print(f"Warning: PRE image not found for {ground_truth['image']}")
+            print(f"Warning: PRE image not found: {ground_truth['image_pre']}")
             continue
         
         # Extract camera ID from filename (e.g., "001_cam0_BS1_post.jpg" -> 0)

@@ -22,5 +22,5 @@
     }
   },
   "useLegacyMcpJson": false,
-  "model": "claude-sonnet-4.5"
+  "model": "Auto"
 }
