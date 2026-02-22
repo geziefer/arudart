@@ -1,7 +1,7 @@
 # ARU-DART Development Knowledge Base
 
-**Last Updated:** 2026-01-11  
-**Phase:** Multi-Camera Detection (Step 5) - Ready for Testing
+**Last Updated:** 2026-02-22  
+**Phase:** Regression Testing Complete (Step 5.5) - Ready for Calibration
 
 ---
 
@@ -9,7 +9,7 @@
 
 Automatic dartboard scoring system using 3 USB cameras (OV9732) at 120° intervals, detecting dart throws via image differencing and multi-camera fusion.
 
-**Current Status:** Step 5 ready - single-camera detection optimized (>95% accuracy), multi-camera testing next
+**Current Status:** Step 5.5 complete - regression testing infrastructure in place, 90% detection rate baseline established
 
 ---
 
@@ -821,7 +821,50 @@ thresh = cv2.bitwise_and(thresh, thresh, mask=cv2.bitwise_not(previous_darts_mas
 
 ## Performance Metrics
 
-**Detection Rate:** 93% (41/44 test cases)
+### Regression Test Results (Step 5.5)
+
+**Test Dataset:** 20 throws (BS1-BS20), 60 images (3 cameras × 20 throws)
+
+| Metric | Result |
+|--------|--------|
+| Detection rate | 90% (18/20 throws) |
+| Confirmed rate | 75% (15/20 with ≥2 cameras) |
+| HIGH confidence (3/3) | 20% (4 throws) |
+| GOOD confidence (2/3) | 55% (11 throws) |
+| LOW confidence (1/3) | 15% (3 throws) |
+| FAIL (0/3) | 10% (2 throws) |
+
+**Per-Camera Detection Rates:**
+- cam0 (upper right/18): 40%
+- cam1 (lower right/17): 85%
+- cam2 (left/11): 60%
+
+### Pixel to Real-World Conversion
+
+**At 800×600 resolution:**
+- ~0.8mm per pixel (approximate)
+- 10px tolerance ≈ 8mm real distance
+- 15px error ≈ 12mm real distance
+
+**Implications:**
+- 15px error is significant near sector boundaries
+- Could cause misclassification between adjacent sectors
+- Fusion (Step 6/7) will reduce systematic errors by averaging
+
+### Detection Challenges by Sector Color
+
+**Dark sectors (black):**
+- Tip harder to see against dark background
+- Lower detection accuracy
+- BS2, BS3 failures both on dark sectors
+
+**Light sectors (white/cream):**
+- Better tip visibility
+- Higher detection accuracy
+
+### Single-Camera Performance
+
+**Detection Rate:** 94% (single-camera, TC7.5)
 
 **Tip Accuracy:** >90% (correct end identified)
 

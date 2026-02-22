@@ -32,9 +32,13 @@ Example: BS20 = Big Single 20 (outer single area of sector 20)
 
 ## Current Status (Phase 1 - POC)
 
-- ✅ Steps 0-5 complete: Multi-camera detection working
-- ⏳ Step 5.5 in progress: Regression testing infrastructure
+- ✅ Steps 0-5.5 complete: Multi-camera detection + regression testing
 - 📋 Steps 6-10 planned: Calibration, fusion, state machine, API, validation
+
+### Regression Test Baseline (Step 5.5)
+- **Detection rate**: 90% (18/20 throws detected)
+- **Confirmed rate**: 75% (≥2 cameras agree)
+- **Pixel accuracy**: ~0.8mm per pixel at 800×600
 
 ## Technology Stack
 

@@ -1,0 +1,9 @@
+{
+  "image_post": "BS6_cam2_post.jpg",
+  "image_pre": "BS6_cam2_pre.jpg",
+  "tip_x": 416,
+  "tip_y": 59,
+  "description": "BS6",
+  "expected_ring": "BS",
+  "expected_number": 6
+}

@@ -258,26 +258,47 @@ def main():
     
     # Fusion-based analysis (grouped by throw)
     print("=" * 70)
-    print("FUSION-BASED ANALYSIS (Grouped by Throw)")
+    print("THROW-BASED ANALYSIS (Multi-Camera Fusion)")
     print("=" * 70)
     print()
-    print("In a 3-camera fusion system, success means ≥2 cameras detect correctly.")
+    print("Confidence levels:")
+    print("  HIGH = 3/3 cameras correct (best confidence)")
+    print("  GOOD = 2/3 cameras correct (confirmed)")
+    print("  LOW  = 1/3 cameras correct (single detection, no confirmation)")
+    print("  FAIL = 0/3 cameras correct (no valid detection)")
     print()
     
-    throws_with_2plus = 0
-    throws_with_3 = 0
+    throws_high = 0  # 3/3 cameras
+    throws_good = 0  # 2/3 cameras
+    throws_low = 0   # 1/3 cameras
+    throws_fail = 0  # 0/3 cameras
     total_throws = len(results["per_throw"])
     
     for desc in sorted(results["per_throw"].keys()):
         throw_data = results["per_throw"][desc]
         cameras = throw_data["cameras"]
         passed = sum(1 for cam in cameras.values() if cam["status"] == "PASS")
+        num_cameras = len(cameras)
         
-        status_icon = "✓" if passed >= 2 else "✗"
-        fusion_status = "FUSION OK" if passed >= 2 else "FUSION FAIL"
+        if passed == num_cameras and num_cameras > 0:
+            confidence = "HIGH"
+            status_icon = "✓✓✓"
+            throws_high += 1
+        elif passed >= 2:
+            confidence = "GOOD"
+            status_icon = "✓✓"
+            throws_good += 1
+        elif passed == 1:
+            confidence = "LOW"
+            status_icon = "✓"
+            throws_low += 1
+        else:
+            confidence = "FAIL"
+            status_icon = "✗"
+            throws_fail += 1
         
         print(f"Throw: {desc}")
-        print(f"  {status_icon} {fusion_status} ({passed}/{len(cameras)} cameras)")
+        print(f"  {status_icon} {confidence} ({passed}/{num_cameras} cameras)")
         
         for cam_id in sorted(cameras.keys()):
             cam = cameras[cam_id]
@@ -286,27 +307,28 @@ def main():
             else:
                 print(f"    cam{cam_id}: ✗ FAIL ({cam.get('reason', 'Unknown')})")
         print()
-        
-        if passed >= 2:
-            throws_with_2plus += 1
-        if passed == len(cameras) and len(cameras) > 0:
-            throws_with_3 += 1
     
     print("=" * 70)
-    print("FUSION SUMMARY")
+    print("THROW SUMMARY")
     print("=" * 70)
+    throws_detected = throws_high + throws_good + throws_low
     if total_throws > 0:
-        print(f"Total throws:                    {total_throws}")
-        print(f"Throws with ≥2 cameras (GOOD):   {throws_with_2plus} ({100*throws_with_2plus/total_throws:.0f}%)")
-        print(f"Throws with all cameras (IDEAL): {throws_with_3} ({100*throws_with_3/total_throws:.0f}%)")
+        print(f"Total throws:        {total_throws}")
+        print(f"  HIGH (3/3 cams):   {throws_high} ({100*throws_high/total_throws:.0f}%)")
+        print(f"  GOOD (2/3 cams):   {throws_good} ({100*throws_good/total_throws:.0f}%)")
+        print(f"  LOW  (1/3 cams):   {throws_low} ({100*throws_low/total_throws:.0f}%)")
+        print(f"  FAIL (0/3 cams):   {throws_fail} ({100*throws_fail/total_throws:.0f}%)")
+        print()
+        print(f"Detection rate:      {throws_detected}/{total_throws} ({100*throws_detected/total_throws:.0f}%)")
+        print(f"Confirmed rate:      {throws_high + throws_good}/{total_throws} ({100*(throws_high + throws_good)/total_throws:.0f}%)")
         print()
         
-        if throws_with_2plus == total_throws:
-            print("✓ EXCELLENT: All throws have sufficient camera coverage for fusion!")
-        elif throws_with_2plus >= 0.75 * total_throws:
-            print("✓ GOOD: Most throws (≥75%) have sufficient camera coverage for fusion.")
+        if throws_fail == 0:
+            print("✓ EXCELLENT: All throws detected by at least one camera!")
+        elif throws_detected >= 0.90 * total_throws:
+            print("✓ GOOD: ≥90% of throws detected.")
         else:
-            print("⚠ WARNING: Less than 75% of throws have sufficient camera coverage.")
+            print(f"⚠ WARNING: {throws_fail} throws had no valid detection.")
     print()
     
     # Save report with timestamp
@@ -347,31 +369,52 @@ def main():
                 f.write(f"  {ring:3s}: {stats['passed']}/{stats['total']} ({pct:.1f}%)\n")
         
         f.write("\n" + "=" * 70 + "\n")
-        f.write("FUSION-BASED ANALYSIS\n")
+        f.write("THROW-BASED ANALYSIS\n")
         f.write("=" * 70 + "\n\n")
         
+        f.write("Confidence levels:\n")
+        f.write("  HIGH = 3/3 cameras correct (best confidence)\n")
+        f.write("  GOOD = 2/3 cameras correct (confirmed)\n")
+        f.write("  LOW  = 1/3 cameras correct (single detection)\n")
+        f.write("  FAIL = 0/3 cameras correct (no valid detection)\n\n")
+        
         if total_throws > 0:
-            f.write(f"Total throws:                    {total_throws}\n")
-            f.write(f"Throws with ≥2 cameras (GOOD):   {throws_with_2plus} ({100*throws_with_2plus/total_throws:.0f}%)\n")
-            f.write(f"Throws with all cameras (IDEAL): {throws_with_3} ({100*throws_with_3/total_throws:.0f}%)\n\n")
+            f.write(f"Total throws:        {total_throws}\n")
+            f.write(f"  HIGH (3/3 cams):   {throws_high} ({100*throws_high/total_throws:.0f}%)\n")
+            f.write(f"  GOOD (2/3 cams):   {throws_good} ({100*throws_good/total_throws:.0f}%)\n")
+            f.write(f"  LOW  (1/3 cams):   {throws_low} ({100*throws_low/total_throws:.0f}%)\n")
+            f.write(f"  FAIL (0/3 cams):   {throws_fail} ({100*throws_fail/total_throws:.0f}%)\n\n")
+            f.write(f"Detection rate:      {throws_detected}/{total_throws} ({100*throws_detected/total_throws:.0f}%)\n")
+            f.write(f"Confirmed rate:      {throws_high + throws_good}/{total_throws} ({100*(throws_high + throws_good)/total_throws:.0f}%)\n\n")
         
         f.write("Per-Throw Details:\n")
         for desc in sorted(results["per_throw"].keys()):
             throw_data = results["per_throw"][desc]
             cameras = throw_data["cameras"]
             passed = sum(1 for cam in cameras.values() if cam["status"] == "PASS")
-            fusion_status = "OK" if passed >= 2 else "FAIL"
-            f.write(f"  {desc}: {fusion_status} ({passed}/{len(cameras)} cameras)\n")
+            num_cameras = len(cameras)
+            if passed == num_cameras and num_cameras > 0:
+                confidence = "HIGH"
+            elif passed >= 2:
+                confidence = "GOOD"
+            elif passed == 1:
+                confidence = "LOW"
+            else:
+                confidence = "FAIL"
+            f.write(f"  {desc}: {confidence} ({passed}/{num_cameras} cameras)\n")
     
     print(f"Report saved to: {report_file}")
     print()
     
-    # Exit code based on fusion success (≥75% throws with ≥2 cameras)
-    if total_throws > 0 and throws_with_2plus >= 0.75 * total_throws:
-        print("✓ Regression tests passed (fusion criteria met)")
+    # Exit code: PASS if all throws have at least 1 camera detection
+    if total_throws > 0 and throws_fail == 0:
+        print("✓ Regression tests PASSED (all throws detected)")
+        sys.exit(0)
+    elif total_throws > 0 and throws_detected >= 0.90 * total_throws:
+        print(f"⚠ Regression tests PASSED with warnings ({throws_fail} throws failed)")
         sys.exit(0)
     else:
-        print("✗ Regression tests failed")
+        print("✗ Regression tests FAILED")
         sys.exit(1)
 
 

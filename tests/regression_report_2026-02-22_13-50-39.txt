@@ -1,0 +1,65 @@
+ARU-DART Regression Test Report
+Timestamp: 2026-02-22_13-50-39
+======================================================================
+
+TEST FOLDER CONTENTS
+----------------------------------------
+Directory: data/testimages
+Test cases: 60
+Unique throws: 20
+
+PER-CAMERA SUMMARY
+----------------------------------------
+Total tests:        60
+Passed:             37 (61.7%)
+Failed (no detect): 17
+Failed (position):  6
+
+Per-Camera Results:
+  cam0: 8/20 (40.0%)
+  cam1: 17/20 (85.0%)
+  cam2: 12/20 (60.0%)
+
+Per-Ring Results:
+  BS : 37/60 (61.7%)
+
+======================================================================
+THROW-BASED ANALYSIS
+======================================================================
+
+Confidence levels:
+  HIGH = 3/3 cameras correct (best confidence)
+  GOOD = 2/3 cameras correct (confirmed)
+  LOW  = 1/3 cameras correct (single detection)
+  FAIL = 0/3 cameras correct (no valid detection)
+
+Total throws:        20
+  HIGH (3/3 cams):   4 (20%)
+  GOOD (2/3 cams):   11 (55%)
+  LOW  (1/3 cams):   3 (15%)
+  FAIL (0/3 cams):   2 (10%)
+
+Detection rate:      18/20 (90%)
+Confirmed rate:      15/20 (75%)
+
+Per-Throw Details:
+  BS1: GOOD (2/3 cameras)
+  BS10: GOOD (2/3 cameras)
+  BS11: GOOD (2/3 cameras)
+  BS12: GOOD (2/3 cameras)
+  BS13: GOOD (2/3 cameras)
+  BS14: GOOD (2/3 cameras)
+  BS15: LOW (1/3 cameras)
+  BS16: GOOD (2/3 cameras)
+  BS17: LOW (1/3 cameras)
+  BS18: GOOD (2/3 cameras)
+  BS19: GOOD (2/3 cameras)
+  BS2: FAIL (0/3 cameras)
+  BS20: HIGH (3/3 cameras)
+  BS3: FAIL (0/3 cameras)
+  BS4: HIGH (3/3 cameras)
+  BS5: HIGH (3/3 cameras)
+  BS6: GOOD (2/3 cameras)
+  BS7: LOW (1/3 cameras)
+  BS8: GOOD (2/3 cameras)
+  BS9: HIGH (3/3 cameras)
