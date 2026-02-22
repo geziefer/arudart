@@ -1,0 +1,8 @@
+# Calibration directory for ARU-DART
+# 
+# This directory contains:
+# - Calibration scripts (generate_aruco_markers.py, calibrate_intrinsic.py, etc.)
+# - Calibration data files (intrinsic_cam*.json, homography_cam*.json)
+# - Generated ARUCO markers (markers/ subdirectory)
+#
+# See .kiro/specs/step-6-coordinate-mapping/ for full documentation.
