@@ -10,6 +10,7 @@ from src.camera.camera_manager import CameraManager
 from src.processing.motion_detection import MotionDetector
 from src.processing.background_model import BackgroundModel
 from src.processing.dart_detection import DartDetector
+from src.calibration.coordinate_mapper import CoordinateMapper
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -43,6 +44,86 @@ def draw_histogram(frame):
     return hist_img
 
 
+def draw_calibration_overlay(frame, camera_id, coordinate_mapper):
+    """Draw board coordinate grid overlay on camera frame."""
+    if not coordinate_mapper.is_calibrated(camera_id):
+        return frame
+    
+    display = frame.copy()
+    h, w = display.shape[:2]
+    
+    # Draw concentric circles at key radii (board rings)
+    radii_mm = [
+        (6.35, (0, 0, 255), "DB"),      # Double bull
+        (15.9, (0, 128, 255), "SB"),    # Single bull
+        (99.0, (0, 255, 255), "T-in"),  # Triple inner
+        (107.0, (0, 255, 255), "T-out"),# Triple outer
+        (162.0, (255, 255, 0), "D-in"), # Double inner
+        (170.0, (255, 255, 0), "D-out"),# Double outer
+    ]
+    
+    for radius_mm, color, label in radii_mm:
+        # Sample points around circle
+        points = []
+        for angle in np.linspace(0, 2*np.pi, 72):
+            x = radius_mm * np.cos(angle)
+            y = radius_mm * np.sin(angle)
+            
+            pixel = coordinate_mapper.map_to_image(camera_id, x, y)
+            if pixel is not None:
+                u, v = pixel
+                if 0 <= u < w and 0 <= v < h:
+                    points.append((int(u), int(v)))
+        
+        # Draw circle segments
+        if len(points) > 2:
+            for i in range(len(points) - 1):
+                cv2.line(display, points[i], points[i+1], color, 1)
+            cv2.line(display, points[-1], points[0], color, 1)
+    
+    # Draw coordinate axes
+    # X axis (red) - horizontal through center
+    x_points = []
+    for x in np.linspace(-180, 180, 20):
+        pixel = coordinate_mapper.map_to_image(camera_id, x, 0)
+        if pixel is not None:
+            u, v = pixel
+            if 0 <= u < w and 0 <= v < h:
+                x_points.append((int(u), int(v)))
+    
+    if len(x_points) > 1:
+        for i in range(len(x_points) - 1):
+            cv2.line(display, x_points[i], x_points[i+1], (0, 0, 255), 2)
+    
+    # Y axis (green) - vertical through center
+    y_points = []
+    for y in np.linspace(-180, 180, 20):
+        pixel = coordinate_mapper.map_to_image(camera_id, 0, y)
+        if pixel is not None:
+            u, v = pixel
+            if 0 <= u < w and 0 <= v < h:
+                y_points.append((int(u), int(v)))
+    
+    if len(y_points) > 1:
+        for i in range(len(y_points) - 1):
+            cv2.line(display, y_points[i], y_points[i+1], (0, 255, 0), 2)
+    
+    # Draw origin marker
+    origin = coordinate_mapper.map_to_image(camera_id, 0, 0)
+    if origin is not None:
+        u, v = int(origin[0]), int(origin[1])
+        if 0 <= u < w and 0 <= v < h:
+            cv2.drawMarker(display, (u, v), (255, 255, 255), cv2.MARKER_CROSS, 20, 2)
+            cv2.putText(display, "Origin", (u + 10, v - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    
+    # Add legend
+    cv2.putText(display, "Calibration Overlay (press 'v' to toggle)", (10, h - 10),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    
+    return display
+
+
 def main():
     parser = argparse.ArgumentParser(description='ARU-DART Camera Capture')
     parser.add_argument('--config', default='config.toml', help='Path to config file')
@@ -51,6 +132,8 @@ def main():
     parser.add_argument('--manual-test', action='store_true', help='Enable manual testing mode (pause/place dart/detect)')
     parser.add_argument('--record-mode', action='store_true', help='Enable recording mode (capture images for regression tests)')
     parser.add_argument('--single-camera', type=int, choices=[0, 1, 2], help='Test single camera only (0, 1, or 2)')
+    parser.add_argument('--calibrate', action='store_true', help='Run extrinsic calibration at startup')
+    parser.add_argument('--verify-calibration', action='store_true', help='Run calibration verification script')
     args = parser.parse_args()
     
     # Setup logging
@@ -84,6 +167,42 @@ def main():
         logger.info(f"Multi-camera mode: Using all {len(camera_ids)} cameras")
     
     camera_manager.start_all()
+    
+    # Initialize coordinate mapper for pixel-to-board transformation
+    calibration_dir = config.get('calibration', {}).get('calibration_dir', 'calibration')
+    coordinate_mapper = CoordinateMapper(config, calibration_dir)
+    
+    # Log calibration status
+    calibration_status = coordinate_mapper.get_calibration_status()
+    calibrated_cameras = [cid for cid, status in calibration_status.items() if status['is_calibrated']]
+    if calibrated_cameras:
+        logger.info(f"Coordinate mapping enabled for cameras: {calibrated_cameras}")
+    else:
+        logger.warning("No cameras calibrated - coordinate mapping disabled")
+        logger.warning("Run calibration scripts to enable board coordinate output")
+    
+    # Handle calibration flags
+    if args.calibrate:
+        logger.info("Running extrinsic calibration...")
+        import subprocess
+        result = subprocess.run(
+            ['python', 'calibration/calibrate_extrinsic.py', '--visualize'],
+            cwd=str(Path(__file__).parent)
+        )
+        if result.returncode == 0:
+            logger.info("Calibration complete - reloading calibration data")
+            coordinate_mapper.reload_calibration()
+        else:
+            logger.warning("Calibration failed or was cancelled")
+    
+    if args.verify_calibration:
+        logger.info("Running calibration verification...")
+        import subprocess
+        subprocess.run(
+            ['python', 'calibration/verify_calibration.py'],
+            cwd=str(Path(__file__).parent)
+        )
+        return  # Exit after verification
     
     # Initialize motion detector
     motion_config = config['motion_detection']
@@ -131,6 +250,7 @@ def main():
     pre_frames = {}  # Store pre-frames for current recording
     post_frames = {}  # Store post-frames for current recording
     recording_description = ""  # Current description being typed
+    show_calibration_overlay = False  # Toggle for calibration visualization
     
     # Create recordings folder if in record mode
     if args.record_mode:
@@ -267,8 +387,17 @@ def main():
                                 'tip_x': tip_x,
                                 'tip_y': tip_y,
                                 'confidence': confidence,
-                                'debug_info': debug_info
+                                'debug_info': debug_info,
+                                'board_x': None,
+                                'board_y': None,
                             }
+                            
+                            # Transform to board coordinates if calibrated
+                            if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                                board_coords = coordinate_mapper.map_to_board(camera_id, tip_x, tip_y)
+                                if board_coords is not None:
+                                    detections[camera_id]['board_x'] = board_coords[0]
+                                    detections[camera_id]['board_y'] = board_coords[1]
                             
                             # Save annotated image
                             if tip_x is not None:
@@ -300,7 +429,13 @@ def main():
                         logger.info(f"Dart detected in {len(detected_cameras)}/{len(camera_ids)} cameras:")
                         for cam_id in detected_cameras:
                             det = detections[cam_id]
-                            logger.info(f"  Camera {cam_id}: Tip at ({det['tip_x']}, {det['tip_y']}), confidence: {det['confidence']:.2f}")
+                            if det['board_x'] is not None:
+                                logger.info(f"  Camera {cam_id}: Pixel ({det['tip_x']}, {det['tip_y']}), "
+                                           f"Board ({det['board_x']:.1f}, {det['board_y']:.1f}) mm, "
+                                           f"confidence: {det['confidence']:.2f}")
+                            else:
+                                logger.info(f"  Camera {cam_id}: Pixel ({det['tip_x']}, {det['tip_y']}), "
+                                           f"Board (not calibrated), confidence: {det['confidence']:.2f}")
                     else:
                         logger.warning("No dart detected in any camera - saving images for analysis")
                     
@@ -391,6 +526,10 @@ def main():
                         # Place in bottom-left corner
                         y_offset = display_frame.shape[0] - 80
                         display_frame[y_offset:y_offset+80, 0:256] = hist_resized
+                    
+                    # Draw calibration overlay if enabled
+                    if show_calibration_overlay:
+                        display_frame = draw_calibration_overlay(display_frame, camera_id, coordinate_mapper)
                     
                     cv2.imshow(f"Camera {camera_id}", display_frame)
                 
@@ -529,6 +668,50 @@ def main():
                         # Manually trigger detection
                         motion_state = "dart_detected"
                         last_detection_time = current_time
+                
+                elif key == ord('x'):
+                    # Trigger extrinsic calibration (dev mode only)
+                    if not args.dev_mode:
+                        continue
+                    
+                    logger.info("=== RUNNING EXTRINSIC CALIBRATION ===")
+                    import subprocess
+                    
+                    # Close camera windows temporarily
+                    for cam_id in camera_ids:
+                        cv2.destroyWindow(f"Camera {cam_id}")
+                    
+                    # Run calibration
+                    result = subprocess.run(
+                        ['python', 'calibration/calibrate_extrinsic.py', '--visualize'],
+                        cwd=str(Path(__file__).parent)
+                    )
+                    
+                    if result.returncode == 0:
+                        logger.info("Calibration complete - reloading calibration data")
+                        coordinate_mapper.reload_calibration()
+                        
+                        # Log new calibration status
+                        calibration_status = coordinate_mapper.get_calibration_status()
+                        calibrated_cameras = [cid for cid, status in calibration_status.items() if status['is_calibrated']]
+                        logger.info(f"Coordinate mapping now enabled for cameras: {calibrated_cameras}")
+                    else:
+                        logger.warning("Calibration failed or was cancelled")
+                    
+                    # Recreate camera windows
+                    for i, cam_id in enumerate(camera_ids):
+                        cv2.namedWindow(f"Camera {cam_id}", cv2.WINDOW_NORMAL)
+                        cv2.resizeWindow(f"Camera {cam_id}", 640, 480)
+                        cv2.moveWindow(f"Camera {cam_id}", i * 200, i * 150)
+                
+                elif key == ord('v'):
+                    # Toggle calibration visualization overlay (dev mode only)
+                    if args.dev_mode:
+                        show_calibration_overlay = not show_calibration_overlay
+                        if show_calibration_overlay:
+                            logger.info("Calibration overlay ENABLED")
+                        else:
+                            logger.info("Calibration overlay DISABLED")
             else:
                 time.sleep(0.01)
             
