@@ -27,7 +27,7 @@ from pathlib import Path
 
 def generate_aruco_markers(
     output_dir: str = "calibration/markers",
-    marker_size_mm: int = 40,
+    marker_size_mm: int = 20,
     dpi: int = 300
 ) -> None:
     """
@@ -55,8 +55,8 @@ def generate_aruco_markers(
     print(f"  Marker size: {marker_size_mm}mm ({marker_size_px}px at {dpi} DPI)")
     print()
     
-    # Generate markers 0-5 (we'll use 4, but generate extras for redundancy)
-    for marker_id in range(6):
+    # Generate markers 0-7 (8 markers at 45° intervals)
+    for marker_id in range(8):
         # Generate marker image
         marker_img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, marker_size_px)
         
@@ -77,7 +77,7 @@ def generate_aruco_markers(
     print()
     
     # Generate combined sheet with all 4 markers
-    generate_marker_sheet(output_path, aruco_dict, marker_size_px, dpi)
+    generate_marker_sheet(output_path, aruco_dict, marker_size_px, dpi, marker_size_mm)
     
     # Print summary and instructions
     print_instructions(output_dir, marker_size_mm, marker_size_px, dpi)
@@ -87,86 +87,89 @@ def generate_marker_sheet(
     output_path: Path,
     aruco_dict,
     marker_size_px: int,
-    dpi: int
+    dpi: int,
+    marker_size_mm: int
 ) -> None:
     """
-    Generate a single sheet with all 4 markers for easy printing.
+    Generate a single sheet with all 8 markers.
     
     Args:
         output_path: Directory to save the sheet
         aruco_dict: ARUCO dictionary object
         marker_size_px: Marker size in pixels
         dpi: Print resolution
+        marker_size_mm: Marker size in mm for label
     """
     # Create A4 sheet at specified DPI
-    # A4 = 210mm x 297mm
-    # At 300 DPI: 2480 x 3508 pixels
-    sheet_width = int((210 / 25.4) * dpi)   # 2480 at 300 DPI
-    sheet_height = int((297 / 25.4) * dpi)  # 3508 at 300 DPI
+    sheet_width = int((210 / 25.4) * dpi)
+    sheet_height = int((297 / 25.4) * dpi)
     sheet = np.ones((sheet_height, sheet_width), dtype=np.uint8) * 255
     
-    # Calculate spacing for 2x2 grid with good margins
-    margin = marker_size_px
-    spacing_x = (sheet_width - 2 * marker_size_px - 2 * margin) // 2
-    spacing_y = (sheet_height - 2 * marker_size_px - 2 * margin) // 2
-    
-    # Arrange 4 markers in 2x2 grid
-    positions = [
-        (margin, margin),                                    # Top-left: Marker 0
-        (margin + marker_size_px + spacing_x, margin),       # Top-right: Marker 1
-        (margin, margin + marker_size_px + spacing_y),       # Bottom-left: Marker 2
-        (margin + marker_size_px + spacing_x, margin + marker_size_px + spacing_y),  # Bottom-right: Marker 3
-    ]
-    
-    # Marker placement descriptions for labeling
+    # All 8 markers with positions (clockwise from top)
     placements = [
-        "Top (12 o'clock)",
-        "Right (3 o'clock)",
-        "Bottom (6 o'clock)",
-        "Left (9 o'clock)"
+        "ID 0: Top (12 o'clock)",
+        "ID 1: Right (3 o'clock)",
+        "ID 2: Bottom (6 o'clock)",
+        "ID 3: Left (9 o'clock)",
+        "ID 4: Top-right (1:30)",
+        "ID 5: Bottom-right (4:30)",
+        "ID 6: Bottom-left (7:30)",
+        "ID 7: Top-left (10:30)"
     ]
     
-    for i, (x, y) in enumerate(positions):
-        # Generate marker
-        marker_img = cv2.aruco.generateImageMarker(aruco_dict, i, marker_size_px)
+    # Calculate spacing for 4x2 grid
+    margin_x = marker_size_px // 2
+    margin_y = marker_size_px
+    cols = 4
+    rows = 2
+    spacing_x = (sheet_width - cols * marker_size_px - 2 * margin_x) // (cols - 1)
+    spacing_y = (sheet_height - rows * marker_size_px - 2 * margin_y - 150) // (rows - 1)
+    
+    for marker_id in range(8):
+        col = marker_id % cols
+        row = marker_id // cols
+        x = margin_x + col * (marker_size_px + spacing_x)
+        y = margin_y + 80 + row * (marker_size_px + spacing_y + 60)
         
-        # Place marker on sheet
+        marker_img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, marker_size_px)
         sheet[y:y + marker_size_px, x:x + marker_size_px] = marker_img
         
-        # Add marker ID label below marker
-        label = f"ID: {i} - {placements[i]}"
-        font_scale = 0.8
-        thickness = 2
+        # Add label below marker
+        label = placements[marker_id]
+        font_scale = 0.5
+        thickness = 1
         cv2.putText(
             sheet, label,
-            (x, y + marker_size_px + 40),
+            (x, y + marker_size_px + 25),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale, 0, thickness
         )
     
     # Add title at top
-    title = "ARU-DART Calibration Markers - DICT_4X4_50"
+    title = f"ARU-DART Calibration Markers ({marker_size_mm}mm)"
     cv2.putText(
         sheet, title,
-        (margin, 50),
+        (margin_x, 50),
         cv2.FONT_HERSHEY_SIMPLEX,
         1.0, 0, 2
     )
     
     # Add instructions at bottom
+    border_mm = marker_size_mm // 5
+    total_mm = marker_size_mm + 2 * border_mm
     instructions = [
-        "Print at 100% scale (no fit-to-page). Verify 40mm size with ruler.",
-        "Cut out markers leaving white border. Mount flat on rigid backing."
+        f"Print at 100% scale. Black square = {marker_size_mm}mm, total with border = {total_mm}mm.",
+        "Mount at 185mm from board center in gap between double ring and numbers."
     ]
-    y_pos = sheet_height - 100
+    y_pos = sheet_height - 80
     for instruction in instructions:
         cv2.putText(
             sheet, instruction,
-            (margin, y_pos),
+            (margin_x, y_pos),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.6, 0, 1
+            0.5, 0, 1
         )
-        y_pos += 35
+        y_pos += 30
     
     # Save sheet
     output_file = output_path / "aruco_markers_sheet.png"
@@ -182,12 +185,16 @@ def print_instructions(
 ) -> None:
     """Print detailed instructions for marker usage."""
     
+    border_mm = marker_size_mm // 5
+    total_mm = marker_size_mm + 2 * border_mm
+    
     print("=" * 70)
     print("ARUCO MARKER GENERATION COMPLETE")
     print("=" * 70)
     print()
     print(f"Output directory: {output_dir}")
-    print(f"Marker size: {marker_size_mm}mm ({marker_size_px}px at {dpi} DPI)")
+    print(f"Marker size: {marker_size_mm}mm black square + {border_mm}mm border = {total_mm}mm total")
+    print(f"Resolution: {marker_size_px}px at {dpi} DPI")
     print()
     print("-" * 70)
     print("PRINTING INSTRUCTIONS")
@@ -200,55 +207,54 @@ def print_instructions(
     print("   - Color: Black & White")
     print()
     print("2. VERIFICATION:")
-    print(f"   - Measure printed marker with ruler")
-    print(f"   - Should be exactly {marker_size_mm}mm × {marker_size_mm}mm")
+    print(f"   - Measure printed marker black square with ruler")
+    print(f"   - Black square should be exactly {marker_size_mm}mm × {marker_size_mm}mm")
+    print(f"   - Total with white border should be {total_mm}mm × {total_mm}mm")
     print("   - If size is wrong, check print settings and reprint")
     print()
     print("3. PREPARATION:")
     print("   - Cut out each marker leaving white border intact")
-    print("   - Mount on rigid backing (cardboard or foam board)")
-    print("   - Ensure markers are perfectly flat (no wrinkles or bends)")
+    print("   - Mount on board in gap between double ring and number ring")
+    print("   - Ensure markers are flat against board surface")
     print()
     print("-" * 70)
     print("MOUNTING INSTRUCTIONS")
     print("-" * 70)
     print()
-    print("Marker positions (200mm from board center):")
-    print("   - Marker 0: 12 o'clock (top)")
-    print("   - Marker 1:  3 o'clock (right)")
-    print("   - Marker 2:  6 o'clock (bottom)")
-    print("   - Marker 3:  9 o'clock (left)")
-    print()
-    print("Mounting process:")
-    print("   1. Measure 200mm from board center in each direction")
-    print("   2. Mark positions on wall/mounting surface")
-    print("   3. Attach markers with tape or adhesive")
-    print("   4. Ensure markers are:")
-    print("      - Flat against surface (no curling)")
-    print("      - Parallel to board plane")
-    print("      - Clearly visible from all 3 camera positions")
-    print("      - Not occluded by LED ring or other objects")
+    print("8 markers at 185mm from board center (clockwise from top):")
+    print("   - Marker 0: Top (12 o'clock)")
+    print("   - Marker 1: Right (3 o'clock)")
+    print("   - Marker 2: Bottom (6 o'clock)")
+    print("   - Marker 3: Left (9 o'clock)")
+    print("   - Marker 4: Top-right (1:30)")
+    print("   - Marker 5: Bottom-right (4:30)")
+    print("   - Marker 6: Bottom-left (7:30)")
+    print("   - Marker 7: Top-left (10:30)")
     print()
     print("-" * 70)
     print("CONFIGURATION")
     print("-" * 70)
     print()
-    print("After mounting, verify positions in config.toml:")
+    print("After mounting, update config.toml with actual measured positions:")
     print()
     print("  [calibration.aruco_markers]")
-    print("  marker_0 = [0.0, 200.0]      # Top (12 o'clock)")
-    print("  marker_1 = [200.0, 0.0]      # Right (3 o'clock)")
-    print("  marker_2 = [0.0, -200.0]     # Bottom (6 o'clock)")
-    print("  marker_3 = [-200.0, 0.0]     # Left (9 o'clock)")
+    print("  marker_0 = [0.0, 185.0]        # Top (12 o'clock)")
+    print("  marker_1 = [185.0, 0.0]        # Right (3 o'clock)")
+    print("  marker_2 = [0.0, -185.0]       # Bottom (6 o'clock)")
+    print("  marker_3 = [-185.0, 0.0]       # Left (9 o'clock)")
+    print("  marker_4 = [130.8, 130.8]      # Top-right (1:30)")
+    print("  marker_5 = [130.8, -130.8]     # Bottom-right (4:30)")
+    print("  marker_6 = [-130.8, -130.8]    # Bottom-left (7:30)")
+    print("  marker_7 = [-130.8, 130.8]     # Top-left (10:30)")
     print()
     print("-" * 70)
     print("VERIFICATION CHECKLIST")
     print("-" * 70)
     print()
-    print("Before running calibration, verify:")
-    print("  [ ] Markers printed at correct size (40mm)")
-    print("  [ ] Markers mounted flat and parallel to board")
-    print("  [ ] Markers visible from all 3 camera positions")
+    print(f"Before running calibration, verify:")
+    print(f"  [ ] Markers printed at correct size ({marker_size_mm}mm black square)")
+    print("  [ ] Markers placed in gap between double ring and numbers")
+    print("  [ ] At least 4 markers visible from each camera")
     print("  [ ] Marker positions recorded in config.toml")
     print("  [ ] Good lighting (markers clearly visible, no glare)")
     print()
@@ -302,8 +308,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--size", "-s",
         type=int,
-        default=40,
-        help="Marker size in millimeters (default: 40)"
+        default=20,
+        help="Marker size in millimeters (default: 20)"
     )
     parser.add_argument(
         "--dpi", "-d",
