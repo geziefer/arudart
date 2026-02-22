@@ -1,3 +1,4 @@
-opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0  # Includes ARUCO module for calibration
 numpy>=1.24.0
 tomli>=2.0.1; python_version < '3.11'
+hypothesis>=6.0.0  # Property-based testing
