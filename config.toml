@@ -35,9 +35,9 @@ enabled = true
 # - contrast: Image contrast (typically 10-50)
 # - gamma: Gamma correction (typically 100-400)
 [camera_control.per_camera]
-cam0 = { exposure_time_ms = 3.7, contrast = 30, gamma = 250 }
-cam1 = { exposure_time_ms = 3.2, contrast = 30, gamma = 200 }
-cam2 = { exposure_time_ms = 3.5, contrast = 30, gamma = 380 }
+cam0 = { exposure_time_ms = 4.3, contrast = 30, gamma = 250 }
+cam1 = { exposure_time_ms = 3.6, contrast = 30, gamma = 200 }
+cam2 = { exposure_time_ms = 4.9, contrast = 30, gamma = 380 }
 
 [motion_detection]
 downscale_factor = 4
