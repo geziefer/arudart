@@ -5,8 +5,17 @@ Ground Truth Annotation Tool
 Annotate dart tip positions in recorded images by clicking.
 Creates ground truth JSON files for regression testing.
 
+Workflow:
+    1. Record images: python main.py --dev-mode --record-mode
+    2. Annotate: python tools/annotate_ground_truth.py
+    3. Copy to test folder: cp data/recordings/*.jpg data/recordings/*.json data/testimages/
+    4. Run tests: python tools/run_regression_tests.py
+
 Usage:
-    python tools/annotate_ground_truth.py
+    python tools/annotate_ground_truth.py [--dir DIR]
+    
+Options:
+    --dir DIR    Directory containing images (default: data/recordings)
 """
 
 import cv2
@@ -266,7 +275,13 @@ def save_ground_truth(img_file, tip_x, tip_y):
 
 
 def main():
-    recordings_dir = Path("data/recordings")
+    import argparse
+    parser = argparse.ArgumentParser(description='Annotate ground truth for dart images')
+    parser.add_argument('--dir', type=str, default='data/recordings',
+                       help='Directory containing images (default: data/recordings)')
+    args = parser.parse_args()
+    
+    recordings_dir = Path(args.dir)
     
     if not recordings_dir.exists():
         print(f"Error: {recordings_dir} does not exist")

@@ -86,7 +86,19 @@ All files saved to `data/recordings/`:
 After recording images:
 
 1. **Annotate ground truth** - Use `tools/annotate_ground_truth.py` to click tip positions
-2. **Run regression tests** - Use `pytest tests/test_detection_regression.py` to validate detection
+2. **Copy to test folder** - Copy annotated images and JSON files to testimages
+3. **Run regression tests** - Use `tools/run_regression_tests.py` to validate detection
+
+```bash
+# Step 1: Annotate (works on data/recordings by default)
+python tools/annotate_ground_truth.py
+
+# Step 2: Copy annotated files to test folder
+cp data/recordings/*.jpg data/recordings/*.json data/testimages/
+
+# Step 3: Run regression tests
+python tools/run_regression_tests.py --tolerance 10
+```
 
 ## Why Pre/Post Pairs?
 

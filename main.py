@@ -444,7 +444,7 @@ def main():
                     # In normal/manual-test mode: reset background
                     if args.record_mode and recording_state == "waiting_for_pre":
                         # Capture PRE frame (clean board)
-                        logger.info(f"=== CAPTURING PRE-FRAME for recording {recording_number:03d} ===")
+                        logger.info("=== CAPTURING PRE-FRAME ===")
                         
                         # Capture current frames from all cameras
                         pre_frames = {}
@@ -494,7 +494,7 @@ def main():
                         continue
                     
                     # Capture POST frame (with dart)
-                    logger.info(f"=== CAPTURING POST-FRAME for recording {recording_number:03d} ===")
+                    logger.info("=== CAPTURING POST-FRAME ===")
                     
                     # Capture current frames from all cameras
                     post_frames = {}
@@ -508,8 +508,6 @@ def main():
                     recording_description = ""
                     logger.info("=== Enter description in camera window ===")
                     continue
-                
-                elif key == ord('p'):
                 
                 elif key == ord('p'):
                     # Toggle pause for manual dart placement (manual test mode only)
