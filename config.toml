@@ -72,22 +72,16 @@ square_size_mm = 25.0   # Size of each square in millimeters
 # ARUCO marker configuration for extrinsic calibration
 [calibration.aruco]
 dictionary = "DICT_4X4_50"  # ARUCO dictionary
-marker_size_mm = 20.0       # Physical marker size in mm (20mm + 4mm border = 24mm total, fits 25mm gap)
+marker_size_mm = 40.0       # Physical marker size in millimeters
 
 # Marker positions in board coordinates (mm from center)
 # Format: [x, y] where (0, 0) is board center, +X right, +Y up
-# 8 markers around the board (185mm from center)
-# Markers 0-3: existing at cardinal positions (clockwise from top)
-# Markers 4-7: new at diagonal positions (clockwise from top-right)
+# Mount markers at 12, 3, 6, 9 o'clock positions, ~200mm from center
 [calibration.aruco_markers]
-marker_0 = [0.0, 185.0]        # Top (12 o'clock)
-marker_1 = [185.0, 0.0]        # Right (3 o'clock)
-marker_2 = [0.0, -185.0]       # Bottom (6 o'clock)
-marker_3 = [-185.0, 0.0]       # Left (9 o'clock)
-marker_4 = [130.8, 130.8]      # Top-right (1:30, between 0 and 1)
-marker_5 = [130.8, -130.8]     # Bottom-right (4:30, between 1 and 2)
-marker_6 = [-130.8, -130.8]    # Bottom-left (7:30, between 2 and 3)
-marker_7 = [-130.8, 130.8]     # Top-left (10:30, between 3 and 0)
+marker_0 = [0.0, 200.0]      # Top (12 o'clock)
+marker_1 = [200.0, 0.0]      # Right (3 o'clock)
+marker_2 = [0.0, -200.0]     # Bottom (6 o'clock)
+marker_3 = [-200.0, 0.0]     # Left (9 o'clock)
 
 # =============================================================================
 # Board Dimensions (Winmau Blade 6 / Standard Dartboard)
