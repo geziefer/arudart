@@ -1,230 +1,288 @@
-# Implementation Plan: Step 6 - Coordinate Mapping
+# Implementation Plan: Step 6 - Coordinate Mapping (Spiderweb-Based)
 
 ## Overview
 
-This implementation plan breaks down the coordinate mapping system into discrete coding tasks. Each task builds on previous steps and includes references to specific requirements. The system transforms camera pixel coordinates to board-plane coordinates using intrinsic and extrinsic calibration.
+This implementation plan breaks down the spiderweb-based coordinate mapping system into discrete coding tasks. The system uses the dartboard's natural wire structure (bull, rings, radial wires) as calibration reference points, eliminating the need for external ARUCO markers. Each camera gets its own homography computed from features visible in its perspective.
 
 ## Tasks
 
 - [ ] 1. Set up calibration module structure and configuration
-  - Create `src/calibration/` directory with `__init__.py`
-  - Create `calibration/` directory for calibration files and scripts
-  - Add calibration configuration section to `config.toml`
-  - Update `requirements.txt` with `opencv-contrib-python` (for ARUCO)
-  - _Requirements: AC-6.1.4, AC-6.2.4, AC-6.3.3_
+  - Create `src/calibration/__init__.py` with module exports
+  - Add calibration configuration section to `config.toml` (feature detection params, thresholds)
+  - Create `calibration/` directory for calibration JSON files
+  - _Requirements: 3.5, 7.4_
 
-- [ ] 2. Implement ARUCO marker generation script
-  - [ ] 2.1 Create `calibration/generate_aruco_markers.py`
-    - Implement marker generation using DICT_4X4_50 dictionary
-    - Generate individual marker images (40mm at 300 DPI)
-    - Generate combined marker sheet for easy printing
-    - Add printing instructions and verification guidance
-    - _Requirements: AC-6.2.1, AC-6.2.6_
-
-- [ ] 3. Implement ArucoDetector class
-  - [ ] 3.1 Create `src/calibration/aruco_detector.py`
-    - Implement `__init__()` with dictionary initialization
-    - Implement `detect_markers()` using cv2.aruco.detectMarkers()
-    - Implement `validate_markers()` to check for minimum 4 markers
-    - Implement `draw_markers()` for visualization
-    - Add error handling for detection failures
-    - _Requirements: AC-6.2.5, AC-6.3.1_
+- [ ] 2. Implement FeatureDetector class
+  - [ ] 2.1 Create `src/calibration/feature_detector.py` with basic structure
+    - Implement `__init__()` with config loading
+    - Implement `detect()` returning FeatureDetectionResult dataclass
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
   
-  - [ ] 3.2 Write property test for marker detection
-    - **Property 1: Marker Detection Reliability**
-    - Generate synthetic images with ARUCO markers at various positions
-    - Verify detection succeeds and corner accuracy within 1 pixel
-    - **Validates: Requirements AC-6.2.5, AC-6.3.1**
-
-- [ ] 4. Implement IntrinsicCalibrator class
-  - [ ] 4.1 Create `src/calibration/intrinsic_calibrator.py`
-    - Implement `__init__()` with chessboard configuration
-    - Implement `capture_calibration_images()` with interactive UI
-    - Implement `calibrate()` using cv2.calibrateCamera()
-    - Implement `save_calibration()` to JSON format
-    - Add validation for reprojection error < 0.5 pixels
-    - _Requirements: AC-6.1.1, AC-6.1.2, AC-6.1.3, AC-6.1.4_
+  - [ ] 2.2 Implement bull center detection
+    - Use Hough circles to find bull (small dark circle)
+    - Filter by expected radius range (10-30 pixels)
+    - Select best candidate by position and accumulator value
+    - Refine center with sub-pixel accuracy
+    - _Requirements: 1.1, 1.6_
   
-  - [ ] 4.2 Write unit tests for intrinsic calibration
-    - Test chessboard detection with synthetic images
-    - Test calibration computation with known geometry
-    - Test JSON serialization/deserialization
-    - Test error handling for insufficient images
-    - _Requirements: AC-6.1.2, AC-6.1.3, AC-6.1.4_
+  - [ ] 2.3 Implement ring edge detection
+    - Apply Canny edge detection
+    - Create annular masks around expected ring radii
+    - Fit ellipses to edge points using cv2.fitEllipse
+    - Sample points along fitted ellipses
+    - _Requirements: 1.2, 1.3_
   
-  - [ ] 4.3 Write property test for calibration serialization
-    - **Property 5: Calibration Serialization Round Trip**
-    - Generate random valid calibration matrices
-    - Save to JSON, load back, verify numerical equivalence
-    - **Validates: Requirements AC-6.1.4**
+  - [ ] 2.4 Implement radial wire detection
+    - Use HoughLinesP to detect line segments
+    - Filter lines passing near bull center
+    - Cluster lines by angle (18° sectors)
+    - Select strongest line per cluster
+    - _Requirements: 1.4, 1.8_
+  
+  - [ ] 2.5 Implement wire-ring intersection finding
+    - Compute intersections between detected wires and ring ellipses
+    - Associate intersections with wire index and ring type
+    - _Requirements: 1.5, 1.7_
+  
+  - [ ]* 2.6 Write unit tests for FeatureDetector
+    - Test bull detection with synthetic dartboard images
+    - Test ring detection with known ellipse geometry
+    - Test wire detection with synthetic line patterns
+    - Test error handling for missing features
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
 
-- [ ] 5. Implement intrinsic calibration script
-  - [ ] 5.1 Create `calibration/calibrate_intrinsic.py`
-    - Implement interactive camera capture with live preview
-    - Show chessboard detection overlay
-    - Capture 20-30 images at different angles
-    - Run calibration and display reprojection error
-    - Save results to `calibration/intrinsic_cam{N}.json`
-    - _Requirements: AC-6.1.1, AC-6.1.2, AC-6.1.3, AC-6.1.4_
-
-- [ ] 6. Checkpoint - Verify intrinsic calibration works
-  - Run intrinsic calibration script for one camera
-  - Verify reprojection error < 0.5 pixels
-  - Verify JSON file created with correct format
+- [ ] 3. Checkpoint - Verify feature detection works
+  - Test FeatureDetector on real camera images
+  - Verify bull center detection accuracy
+  - Verify ring edge detection coverage
+  - Verify radial wire detection count (≥8 in good view region)
   - Ask user if questions arise
 
-
-- [ ] 7. Implement ExtrinsicCalibrator class
-  - [ ] 7.1 Create `src/calibration/extrinsic_calibrator.py`
-    - Implement `__init__()` with ArucoDetector and marker positions from config
-    - Implement `calibrate()` to compute homography using cv2.findHomography()
-    - Implement `save_calibration()` to JSON format
-    - Implement `verify_homography()` to compute reprojection error
-    - Add error handling for insufficient markers and degenerate homography
-    - _Requirements: AC-6.3.1, AC-6.3.2, AC-6.3.3, AC-6.3.6_
+- [ ] 4. Implement FeatureMatcher class
+  - [ ] 4.1 Create `src/calibration/feature_matcher.py`
+    - Implement `__init__()` with board geometry constants
+    - Implement `match()` returning list of (pixel, board) point pairs
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
   
-  - [ ] 7.2 Write unit tests for extrinsic calibration
-    - Test marker detection with synthetic images
-    - Test homography computation with known point correspondences
-    - Test JSON serialization/deserialization
-    - Test error handling for missing markers
-    - _Requirements: AC-6.3.2, AC-6.3.3, AC-6.3.6_
+  - [ ] 4.2 Implement sector 20 identification
+    - Find wire closest to vertical (pointing up from bull)
+    - Use image orientation to determine top of board
+    - _Requirements: 2.4_
   
-  - [ ] 7.3 Write property test for homography collinearity
-    - **Property 3: Homography Preserves Collinearity**
-    - Generate random sets of 3 collinear board points
-    - Transform to image coordinates
-    - Verify collinearity using cross product (near zero)
-    - **Validates: Requirements AC-6.3.2**
+  - [ ] 4.3 Implement wire sector assignment
+    - Assign sector numbers to detected wires based on angle from sector 20
+    - Use known sector order: 20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5
+    - _Requirements: 2.4, 2.5_
+  
+  - [ ] 4.4 Implement board coordinate computation
+    - Map bull center to (0, 0)
+    - Map ring edge points to known radii (170mm, 107mm)
+    - Map wire intersections using radius and sector angle
+    - _Requirements: 2.1, 2.2, 2.3, 2.5_
+  
+  - [ ]* 4.5 Write property test for bull center mapping
+    - **Property 1: Bull Center Maps to Origin**
+    - For any detected bull center, matched board coordinate should be (0, 0)
+    - **Validates: Requirements 2.1**
+  
+  - [ ]* 4.6 Write property test for ring radius mapping
+    - **Property 2: Ring Points Map to Correct Radius**
+    - For any double ring point, radius should be 170mm (±1mm)
+    - For any triple ring point, radius should be 107mm (±1mm)
+    - **Validates: Requirements 2.2, 2.3**
 
-- [ ] 8. Implement extrinsic calibration script
-  - [ ] 8.1 Create `calibration/calibrate_extrinsic.py`
-    - Initialize all cameras
-    - For each camera: detect markers, compute homography, save results
-    - Display summary with marker counts and reprojection errors
-    - Add visualization option to show detected markers
-    - _Requirements: AC-6.3.1, AC-6.3.2, AC-6.3.3, AC-6.3.4_
+- [ ] 5. Implement HomographyCalculator class
+  - [ ] 5.1 Create `src/calibration/homography_calculator.py`
+    - Implement `__init__()` with RANSAC configuration
+    - Implement `compute()` using cv2.findHomography with RANSAC
+    - Implement `verify()` to compute reprojection error
+    - Implement `save()` and `load()` for JSON persistence
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  
+  - [ ]* 5.2 Write property test for serialization round-trip
+    - **Property 4: Calibration Serialization Round-Trip**
+    - Save homography to JSON, load back, verify numerical equivalence
+    - **Validates: Requirements 3.5, 7.4**
+  
+  - [ ]* 5.3 Write property test for reprojection error threshold
+    - **Property 9: Reprojection Error Thresholds Met**
+    - Verify computed homography has reprojection error < 5mm
+    - **Validates: Requirements 3.3**
 
-- [ ] 9. Implement CoordinateMapper class
-  - [ ] 9.1 Create `src/calibration/coordinate_mapper.py`
-    - Implement `__init__()` to load calibration data from JSON files
+- [ ] 6. Checkpoint - Verify homography computation works
+  - Run full pipeline: detect → match → compute homography
+  - Verify homography is non-degenerate
+  - Verify reprojection error < 5mm
+  - Save homography to JSON and verify file format
+  - Ask user if questions arise
+
+- [ ] 7. Implement CoordinateMapper class
+  - [ ] 7.1 Create `src/calibration/coordinate_mapper.py`
+    - Implement `__init__()` to load intrinsic and homography from JSON
     - Implement `map_to_board()` with undistortion and homography
     - Implement `map_to_image()` for inverse transformation
-    - Implement `is_calibrated()` to check calibration status
-    - Implement `reload_calibration()` for runtime recalibration
-    - Add thread safety with threading.Lock
-    - Add error handling for missing calibration files
-    - Add bounds checking for out-of-bounds coordinates
-    - _Requirements: AC-6.4.1, AC-6.4.2, AC-6.4.3, AC-6.4.4, AC-6.4.5, AC-6.3.7_
+    - Implement `is_calibrated()` and `reload_calibration()`
+    - Add threading.Lock for thread safety
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8_
   
-  - [ ] 9.2 Write property test for homography inverse
-    - **Property 2: Homography Inverse Property (Round Trip)**
-    - Generate random board coordinates within bounds (-200 to +200mm)
-    - Transform to image then back to board
-    - Verify round trip error < 1mm
-    - **Validates: Requirements AC-6.4.2, AC-6.5.2**
+  - [ ]* 7.2 Write property test for homography round-trip
+    - **Property 3: Homography Round-Trip Consistency**
+    - For any board coordinate, map_to_image then map_to_board should return original (±1mm)
+    - **Validates: Requirements 4.4, 4.7**
   
-  - [ ] 9.3 Write property test for undistortion invertibility
-    - **Property 6: Undistortion is Invertible**
-    - Generate random pixel coordinates within image bounds
-    - Undistort then redistort
-    - Verify round trip error < 0.1 pixels
-    - **Validates: Requirements AC-6.4.3**
+  - [ ]* 7.3 Write property test for bounds checking
+    - **Property 5: Bounds Checking Returns None for Out-of-Bounds**
+    - For pixels mapping to radius > 200mm, map_to_board should return None
+    - **Validates: Requirements 4.6**
   
-  - [ ] 9.4 Write property test for coordinate bounds checking
-    - **Property 7: Coordinate Bounds Checking**
-    - Generate pixel coordinates that map outside board bounds
-    - Verify system returns None or flags out-of-bounds
-    - **Validates: Requirements AC-6.4.5**
+  - [ ]* 7.4 Write property test for thread safety
+    - **Property 8: Thread Safety Under Concurrent Access**
+    - Concurrent calls from multiple threads should complete without corruption
+    - **Validates: Requirements 4.8**
   
-  - [ ] 9.5 Write property test for multi-camera consistency
-    - **Property 8: Transformation Consistency Across Cameras**
-    - Generate random board coordinates
-    - Transform to image for all 3 cameras, then back to board
-    - Verify all cameras agree within 5mm
-    - **Validates: Requirements AC-6.4.2, AC-6.5.4**
-  
-  - [ ] 9.6 Write unit tests for CoordinateMapper
+  - [ ]* 7.5 Write unit tests for CoordinateMapper
     - Test loading valid calibration files
     - Test handling missing calibration files gracefully
     - Test coordinate system convention (origin, axes)
-    - Test thread-safe concurrent access
     - Test reload_calibration() functionality
-    - _Requirements: AC-6.4.1, AC-6.4.4, AC-6.3.7_
+    - _Requirements: 4.1, 4.5_
 
-- [ ] 10. Checkpoint - Verify coordinate transformation works
-  - Create test calibration files with known homography
-  - Test map_to_board() with known pixel coordinates
-  - Verify board coordinates match expected values
-  - Test map_to_image() inverse transformation
+- [ ] 8. Implement CalibrationManager class
+  - [ ] 8.1 Create `src/calibration/calibration_manager.py`
+    - Implement `__init__()` with component dependencies
+    - Implement state machine: ready, calibrating, error
+    - Implement `get_status()` returning CalibrationStatus
+    - _Requirements: 5.5, 6.1, 6.5_
+  
+  - [ ] 8.2 Implement full calibration workflow
+    - Implement `run_full_calibration()` orchestrating detect → match → compute → save
+    - Handle calibration failures with retry logic
+    - _Requirements: 5.1, 6.6_
+  
+  - [ ] 8.3 Implement lightweight validation
+    - Implement `run_lightweight_validation()` checking bull center only
+    - Compute drift as distance from expected (0, 0)
+    - _Requirements: 5.2, 5.3_
+  
+  - [ ] 8.4 Implement drift detection and recalibration
+    - Implement `check_and_recalibrate()` triggering recalibration on drift > 3mm
+    - Track consecutive failures, enter error state after 3
+    - _Requirements: 5.3, 5.4, 6.6_
+  
+  - [ ]* 8.5 Write property test for drift detection
+    - **Property 6: Drift Detection Triggers Recalibration**
+    - For drift > 3mm, state should transition to "calibrating"
+    - **Validates: Requirements 5.3**
+  
+  - [ ]* 8.6 Write property test for state machine transitions
+    - **Property 7: State Machine Transitions Are Valid**
+    - Verify only valid state transitions occur
+    - After 3 failures, state should be "error"
+    - **Validates: Requirements 6.1, 6.6**
+
+- [ ] 9. Checkpoint - Verify calibration manager works
+  - Test full calibration workflow on real camera
+  - Test lightweight validation detects drift
+  - Test state transitions: ready → calibrating → ready
+  - Test failure handling: 3 failures → error state
   - Ask user if questions arise
 
-- [ ] 11. Implement calibration verification script
-  - [ ] 11.1 Create `calibration/verify_calibration.py`
-    - Implement interactive UI for clicking control points
-    - Load coordinate mapper and display camera view
-    - Transform clicked pixels to board coordinates
-    - Compute error vs known ground truth (T20, D20, bull, etc.)
-    - Display error statistics and save verification report
-    - _Requirements: AC-6.5.1, AC-6.5.2, AC-6.5.3, AC-6.5.4, AC-6.5.5_
+- [ ] 10. Implement intrinsic calibration script (preserved from original)
+  - [ ] 10.1 Create `src/calibration/intrinsic_calibrator.py`
+    - Implement chessboard image capture with interactive UI
+    - Implement calibration using cv2.calibrateCamera
+    - Implement save to JSON format
+    - _Requirements: 7.1, 7.2, 7.3, 7.4_
   
-  - [ ] 11.2 Write property test for calibration quality metrics
-    - **Property 4: Calibration Quality Metrics**
-    - Use real calibration data with known control points
-    - Verify reprojection error < 0.5 pixels (intrinsic)
-    - Verify mapping error < 5mm (extrinsic with control points)
-    - **Validates: Requirements AC-6.1.3, AC-6.5.4**
+  - [ ] 10.2 Create `calibration/calibrate_intrinsic.py` script
+    - Interactive camera capture with live preview
+    - Chessboard detection overlay
+    - Capture 20-30 images at different angles
+    - Display reprojection error and save results
+    - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 12. Integrate coordinate mapper into main.py
-  - [ ] 12.1 Add CoordinateMapper initialization in main.py
-    - Import CoordinateMapper class
+- [ ] 11. Implement spiderweb calibration script
+  - [ ] 11.1 Create `calibration/calibrate_spiderweb.py` script
+    - Initialize cameras and capture frames
+    - Run FeatureDetector on each camera
+    - Run FeatureMatcher to get point pairs
+    - Run HomographyCalculator to compute and save homography
+    - Display summary with feature counts and reprojection errors
+    - Add visualization option to show detected features
+    - _Requirements: 1.1-1.8, 2.1-2.7, 3.1-3.5_
+
+- [ ] 12. Implement calibration verification script
+  - [ ] 12.1 Create `calibration/verify_calibration.py` script
+    - Interactive UI for clicking control points (T20, D20, bull)
+    - Transform clicked pixels to board coordinates
+    - Compute error vs known ground truth
+    - Display error statistics and save verification report
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  
+  - [ ]* 12.2 Write property test for error computation
+    - **Property 9 (continued): Verification error computation**
+    - Verify average error calculation is correct
+    - **Validates: Requirements 8.3, 8.4**
+
+- [ ] 13. Integrate coordinate mapper into main.py
+  - [ ] 13.1 Add CoordinateMapper initialization
+    - Import CoordinateMapper and CalibrationManager
     - Initialize after camera manager setup
     - Check which cameras are calibrated
     - Log warning if no cameras calibrated
-    - _Requirements: AC-6.4.1_
+    - _Requirements: 4.1, 5.1_
   
-  - [ ] 12.2 Add coordinate transformation to dart detection loop
-    - After dart detection, transform pixel coordinates to board coordinates
+  - [ ] 13.2 Add coordinate transformation to dart detection loop
+    - After dart detection, transform pixel to board coordinates
     - Store both pixel and board coordinates in detection results
     - Log board coordinates for each detection
     - Handle cameras without calibration gracefully
-    - _Requirements: AC-6.4.2, AC-6.4.5_
+    - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6_
   
-  - [ ] 12.3 Add command-line flags for calibration
-    - Add `--calibrate` flag to run extrinsic calibration at startup
+  - [ ] 13.3 Add calibration state checking
+    - Check CalibrationManager status before processing throws
+    - Skip scoring when state is "calibrating"
+    - Log when calibration state changes
+    - _Requirements: 6.2, 6.3_
+  
+  - [ ] 13.4 Add command-line flags for calibration
+    - Add `--calibrate` flag to run spiderweb calibration at startup
+    - Add `--calibrate-intrinsic` flag to run intrinsic calibration
     - Add `--verify-calibration` flag to run verification script
-    - Implement calibration trigger logic
-    - _Requirements: AC-6.3.5, AC-6.3.7_
+    - _Requirements: 5.1, 7.1, 8.1_
   
-  - [ ] 12.4 Add keyboard shortcut for runtime calibration
-    - Add 'c' key handler to trigger extrinsic calibration in dev mode
+  - [ ] 13.5 Add keyboard shortcut for runtime calibration
+    - Add 'c' key handler to trigger spiderweb calibration in dev mode
     - Run calibration for all cameras
     - Reload coordinate mapper after calibration
-    - _Requirements: AC-6.3.7_
+    - _Requirements: 5.4_
 
-- [ ] 13. Add calibration visualization for debugging
-  - [ ] 13.1 Implement calibration visualization overlay
-    - Draw board coordinate grid on camera view
-    - Draw coordinate axes (X=red, Y=green)
-    - Show marker detection with IDs and corners
+- [ ] 14. Add calibration visualization for debugging
+  - [ ] 14.1 Implement calibration visualization overlay
+    - Draw detected bull center (green circle)
+    - Draw detected ring edges (blue ellipses)
+    - Draw detected radial wires (yellow lines)
+    - Draw wire intersections (red dots)
     - Add toggle with 'v' key in dev mode
-    - _Requirements: AC-6.4.4_
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 14. Final checkpoint - End-to-end testing
-  - Run full calibration workflow (intrinsic + extrinsic)
+- [ ] 15. Final checkpoint - End-to-end testing
+  - Run full calibration workflow (intrinsic + spiderweb)
   - Verify coordinate transformation in main.py
   - Test with actual dart throws
   - Verify multi-camera detections produce consistent board coordinates
-  - Run verification script to measure accuracy
+  - Run verification script to measure accuracy (< 5mm average error)
+  - Test continuous calibration: drift detection and recalibration
   - Ensure all tests pass
   - Ask user if questions arise
 
 ## Notes
 
+- Tasks marked with `*` are optional and can be skipped for faster MVP
 - Each task references specific requirements for traceability
 - Checkpoints ensure incremental validation
 - Property tests validate universal correctness properties
 - Unit tests validate specific examples and edge cases
 - Integration happens incrementally to catch errors early
-- All tests are required for comprehensive validation
-
+- Intrinsic calibration (chessboard) is preserved from original design - it handles lens distortion which is camera-specific
+- Spiderweb calibration replaces ARUCO markers for extrinsic calibration
