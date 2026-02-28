@@ -1,0 +1,13 @@
+{
+  "autoApprove": [
+    "readFile",
+    "readMultipleFiles",
+    "readCode",
+    "listDirectory",
+    "fileSearch",
+    "grepSearch",
+    "getDiagnostics",
+    "getProcessOutput",
+    "listProcesses"
+  ]
+}

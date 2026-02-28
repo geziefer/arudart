@@ -6,52 +6,52 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
 
 ## Tasks
 
-- [ ] 1. Set up calibration module structure and configuration
+- [x] 1. Set up calibration module structure and configuration
   - Create `src/calibration/__init__.py` with module exports
   - Add calibration configuration section to `config.toml` (feature detection params, thresholds)
   - Create `calibration/` directory for calibration JSON files
   - _Requirements: 3.5, 7.4_
 
 - [ ] 2. Implement FeatureDetector class
-  - [ ] 2.1 Create `src/calibration/feature_detector.py` with basic structure
+  - [x] 2.1 Create `src/calibration/feature_detector.py` with basic structure
     - Implement `__init__()` with config loading
     - Implement `detect()` returning FeatureDetectionResult dataclass
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
   
-  - [ ] 2.2 Implement bull center detection
+  - [x] 2.2 Implement bull center detection
     - Use Hough circles to find bull (small dark circle)
     - Filter by expected radius range (10-30 pixels)
     - Select best candidate by position and accumulator value
     - Refine center with sub-pixel accuracy
     - _Requirements: 1.1, 1.6_
   
-  - [ ] 2.3 Implement ring edge detection
+  - [x] 2.3 Implement ring edge detection
     - Apply Canny edge detection
     - Create annular masks around expected ring radii
     - Fit ellipses to edge points using cv2.fitEllipse
     - Sample points along fitted ellipses
     - _Requirements: 1.2, 1.3_
   
-  - [ ] 2.4 Implement radial wire detection
+  - [x] 2.4 Implement radial wire detection
     - Use HoughLinesP to detect line segments
     - Filter lines passing near bull center
     - Cluster lines by angle (18° sectors)
     - Select strongest line per cluster
     - _Requirements: 1.4, 1.8_
   
-  - [ ] 2.5 Implement wire-ring intersection finding
+  - [x] 2.5 Implement wire-ring intersection finding
     - Compute intersections between detected wires and ring ellipses
     - Associate intersections with wire index and ring type
     - _Requirements: 1.5, 1.7_
   
-  - [ ]* 2.6 Write unit tests for FeatureDetector
+  - [x] 2.6 Write unit tests for FeatureDetector
     - Test bull detection with synthetic dartboard images
     - Test ring detection with known ellipse geometry
     - Test wire detection with synthetic line patterns
     - Test error handling for missing features
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
 
-- [ ] 3. Checkpoint - Verify feature detection works
+- [x] 3. Checkpoint - Verify feature detection works
   - Test FeatureDetector on real camera images
   - Verify bull center detection accuracy
   - Verify ring edge detection coverage
@@ -59,33 +59,33 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
   - Ask user if questions arise
 
 - [ ] 4. Implement FeatureMatcher class
-  - [ ] 4.1 Create `src/calibration/feature_matcher.py`
+  - [x] 4.1 Create `src/calibration/feature_matcher.py`
     - Implement `__init__()` with board geometry constants
     - Implement `match()` returning list of (pixel, board) point pairs
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
   
-  - [ ] 4.2 Implement sector 20 identification
+  - [x] 4.2 Implement sector 20 identification
     - Find wire closest to vertical (pointing up from bull)
     - Use image orientation to determine top of board
     - _Requirements: 2.4_
   
-  - [ ] 4.3 Implement wire sector assignment
+  - [x] 4.3 Implement wire sector assignment
     - Assign sector numbers to detected wires based on angle from sector 20
     - Use known sector order: 20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5
     - _Requirements: 2.4, 2.5_
   
-  - [ ] 4.4 Implement board coordinate computation
+  - [x] 4.4 Implement board coordinate computation
     - Map bull center to (0, 0)
     - Map ring edge points to known radii (170mm, 107mm)
     - Map wire intersections using radius and sector angle
     - _Requirements: 2.1, 2.2, 2.3, 2.5_
   
-  - [ ]* 4.5 Write property test for bull center mapping
+  - [x] 4.5 Write property test for bull center mapping
     - **Property 1: Bull Center Maps to Origin**
     - For any detected bull center, matched board coordinate should be (0, 0)
     - **Validates: Requirements 2.1**
   
-  - [ ]* 4.6 Write property test for ring radius mapping
+  - [x] 4.6 Write property test for ring radius mapping
     - **Property 2: Ring Points Map to Correct Radius**
     - For any double ring point, radius should be 170mm (±1mm)
     - For any triple ring point, radius should be 107mm (±1mm)
@@ -99,12 +99,12 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Implement `save()` and `load()` for JSON persistence
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ]* 5.2 Write property test for serialization round-trip
+  - [ ] 5.2 Write property test for serialization round-trip
     - **Property 4: Calibration Serialization Round-Trip**
     - Save homography to JSON, load back, verify numerical equivalence
     - **Validates: Requirements 3.5, 7.4**
   
-  - [ ]* 5.3 Write property test for reprojection error threshold
+  - [ ] 5.3 Write property test for reprojection error threshold
     - **Property 9: Reprojection Error Thresholds Met**
     - Verify computed homography has reprojection error < 5mm
     - **Validates: Requirements 3.3**
@@ -125,22 +125,22 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Add threading.Lock for thread safety
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8_
   
-  - [ ]* 7.2 Write property test for homography round-trip
+  - [ ] 7.2 Write property test for homography round-trip
     - **Property 3: Homography Round-Trip Consistency**
     - For any board coordinate, map_to_image then map_to_board should return original (±1mm)
     - **Validates: Requirements 4.4, 4.7**
   
-  - [ ]* 7.3 Write property test for bounds checking
+  - [ ] 7.3 Write property test for bounds checking
     - **Property 5: Bounds Checking Returns None for Out-of-Bounds**
     - For pixels mapping to radius > 200mm, map_to_board should return None
     - **Validates: Requirements 4.6**
   
-  - [ ]* 7.4 Write property test for thread safety
+  - [ ] 7.4 Write property test for thread safety
     - **Property 8: Thread Safety Under Concurrent Access**
     - Concurrent calls from multiple threads should complete without corruption
     - **Validates: Requirements 4.8**
   
-  - [ ]* 7.5 Write unit tests for CoordinateMapper
+  - [ ] 7.5 Write unit tests for CoordinateMapper
     - Test loading valid calibration files
     - Test handling missing calibration files gracefully
     - Test coordinate system convention (origin, axes)
@@ -169,12 +169,12 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Track consecutive failures, enter error state after 3
     - _Requirements: 5.3, 5.4, 6.6_
   
-  - [ ]* 8.5 Write property test for drift detection
+  - [ ] 8.5 Write property test for drift detection
     - **Property 6: Drift Detection Triggers Recalibration**
     - For drift > 3mm, state should transition to "calibrating"
     - **Validates: Requirements 5.3**
   
-  - [ ]* 8.6 Write property test for state machine transitions
+  - [ ] 8.6 Write property test for state machine transitions
     - **Property 7: State Machine Transitions Are Valid**
     - Verify only valid state transitions occur
     - After 3 failures, state should be "error"
@@ -219,7 +219,7 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Display error statistics and save verification report
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
   
-  - [ ]* 12.2 Write property test for error computation
+  - [ ] 12.2 Write property test for error computation
     - **Property 9 (continued): Verification error computation**
     - Verify average error calculation is correct
     - **Validates: Requirements 8.3, 8.4**
