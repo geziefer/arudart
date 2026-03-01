@@ -1,5 +1,5 @@
 """
-Feature matching for spiderweb-based dartboard calibration.
+Feature matching for color-based dartboard calibration.
 
 This module maps detected dartboard features to known board coordinates,
 creating correspondence point pairs for homography computation.
@@ -11,7 +11,7 @@ from typing import Optional
 
 import numpy as np
 
-from .feature_detector import FeatureDetectionResult, RadialWire
+from .feature_detector import FeatureDetectionResult, SectorBoundary
 
 logger = logging.getLogger(__name__)
 

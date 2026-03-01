@@ -447,42 +447,33 @@ class FeatureDetector:
         """
         # Convert to HSV color space for better color segmentation
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
         bull_u, bull_v = bull_center
         
-        # Create masks for different board colors
-        black_mask = cv2.inRange(hsv, np.array(self.black_singles_range[0]), np.array(self.black_singles_range[1]))
-        white_mask = cv2.inRange(hsv, np.array(self.white_singles_range[0]), np.array(self.white_singles_range[1]))
+        # Use edge detection on grayscale to find strong boundaries
+        # This is more reliable than pure color segmentation
+        edges = cv2.Canny(gray, self.canny_threshold_low, self.canny_threshold_high)
         
-        # Red wraps around hue=0, so we need two ranges
-        red_mask1 = cv2.inRange(hsv, np.array(self.red_ring_range_1[0]), np.array(self.red_ring_range_1[1]))
-        red_mask2 = cv2.inRange(hsv, np.array(self.red_ring_range_2[0]), np.array(self.red_ring_range_2[1]))
-        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        # Create annular mask for singles region (between triple and double rings)
+        # Approximate radii based on typical camera setup
+        mask = np.zeros(edges.shape, dtype=np.uint8)
+        cv2.circle(mask, (int(bull_u), int(bull_v)), 270, 255, -1)  # Outer boundary
+        cv2.circle(mask, (int(bull_u), int(bull_v)), 140, 0, -1)   # Inner boundary (exclude triple ring)
         
-        green_mask = cv2.inRange(hsv, np.array(self.green_ring_range[0]), np.array(self.green_ring_range[1]))
+        # Apply mask to edges
+        masked_edges = cv2.bitwise_and(edges, mask)
         
-        # Find color transitions (edges between different colors)
-        # Black-white transitions in singles
-        singles_transitions = cv2.bitwise_xor(black_mask, white_mask)
-        singles_transitions = cv2.morphologyEx(singles_transitions, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+        # Find edge points
+        edge_points = np.column_stack(np.where(masked_edges > 0))
         
-        # Red-green transitions in rings
-        rings_transitions = cv2.bitwise_xor(red_mask, green_mask)
-        rings_transitions = cv2.morphologyEx(rings_transitions, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-        
-        # Combine all transitions
-        all_transitions = cv2.bitwise_or(singles_transitions, rings_transitions)
-        
-        # Find transition edge points
-        transition_points = np.column_stack(np.where(all_transitions > 0))
-        
-        if len(transition_points) == 0:
-            logger.debug("No color transitions detected")
+        if len(edge_points) == 0:
+            logger.debug("No edge points detected in singles region")
             return []
         
         # Convert from (row, col) to (x, y) and compute angles from bull center
         transition_data = []
-        for row, col in transition_points:
+        for row, col in edge_points:
             x, y = float(col), float(row)
             
             # Compute angle from bull center (0° = up, clockwise)
@@ -495,45 +486,102 @@ class FeatureDetector:
             # Compute distance from bull
             dist = np.sqrt(dx**2 + dy**2)
             
-            transition_data.append({
-                'point': (x, y),
-                'angle': angle,
-                'distance': dist
-            })
+            # Only include points in the singles region
+            if 140 < dist < 270:
+                transition_data.append({
+                    'point': (x, y),
+                    'angle': angle,
+                    'distance': dist
+                })
+        
+        logger.debug(f"Found {len(edge_points)} edge points, {len(transition_data)} in singles region")
+        
+        if len(transition_data) < 100:
+            logger.debug(f"Insufficient transition points: {len(transition_data)} < 100 minimum")
+            return []
         
         # Cluster transition points by angle (18° sectors for 20 boundaries)
-        sector_width = 18.0
-        angle_clusters = {}
+        # Use histogram to find peaks in angular distribution
+        angles = np.array([d['angle'] for d in transition_data])
         
-        for data in transition_data:
-            angle = data['angle']
-            # Determine which angular bin this belongs to
-            bin_index = int(angle / self.boundary_clustering_angle_deg)
+        # Create histogram with 360 bins (1° per bin)
+        hist, bin_edges = np.histogram(angles, bins=360, range=(0, 360))
+        
+        # Smooth histogram to reduce noise (simple moving average, no scipy needed)
+        window_size = 5
+        hist_smooth = np.convolve(hist.astype(float), np.ones(window_size)/window_size, mode='same')
+        
+        # Find peaks in histogram (these are potential sector boundaries)
+        # Simple peak detection: local maxima above threshold
+        # Start with 75th percentile, but lower if we don't find enough peaks
+        threshold_percentile = 75
+        min_distance = 10  # Minimum distance between peaks in bins
+        
+        logger.debug(
+            f"Histogram stats: max={hist.max()}, mean={hist.mean():.1f}, "
+            f"median={np.median(hist):.1f}, num_angles={len(angles)}"
+        )
+        
+        # Try progressively lower thresholds until we find enough peaks
+        for attempt_percentile in [75, 70, 65, 60, 55, 50]:
+            threshold = np.percentile(hist_smooth, attempt_percentile)
             
-            if bin_index not in angle_clusters:
-                angle_clusters[bin_index] = []
-            angle_clusters[bin_index].append(data)
+            peaks = []
+            for i in range(min_distance, len(hist_smooth) - min_distance):
+                # Check if this is a local maximum
+                if hist_smooth[i] > threshold:
+                    # Check if it's higher than neighbors within min_distance
+                    is_peak = True
+                    for j in range(i - min_distance, i + min_distance + 1):
+                        if j != i and hist_smooth[j] >= hist_smooth[i]:
+                            is_peak = False
+                            break
+                    
+                    if is_peak:
+                        peaks.append(i)
+            
+            logger.debug(
+                f"Attempt {attempt_percentile}th percentile: threshold={threshold:.1f}, "
+                f"found {len(peaks)} peaks"
+            )
+            
+            # If we found enough peaks, stop
+            if len(peaks) >= 8:
+                break
         
-        # For each cluster, fit a line through the points (boundary from bull center)
+        if len(peaks) < 8:
+            logger.debug(f"Insufficient peaks found: {len(peaks)} < 8 (threshold={threshold:.1f})")
+            return []
+        
+        # Create sector boundaries from peaks
         sector_boundaries = []
         
-        for bin_index, cluster in angle_clusters.items():
-            if len(cluster) < self.min_boundary_edge_points:
+        for peak_idx in peaks:
+            peak_angle = bin_edges[peak_idx]
+            
+            # Get all transition points near this angle (±5°)
+            angle_tolerance = 5.0
+            nearby_points = [
+                d for d in transition_data 
+                if abs(d['angle'] - peak_angle) < angle_tolerance or 
+                   abs(d['angle'] - peak_angle - 360) < angle_tolerance or
+                   abs(d['angle'] - peak_angle + 360) < angle_tolerance
+            ]
+            
+            if len(nearby_points) < self.min_boundary_edge_points:
                 continue
             
-            # Compute mean angle for this cluster
-            angles = [d['angle'] for d in cluster]
-            mean_angle = np.mean(angles)
+            # Compute mean angle for this boundary
+            nearby_angles = [d['angle'] for d in nearby_points]
+            mean_angle = np.mean(nearby_angles)
             
             # Get edge points
-            edge_points = [d['point'] for d in cluster]
+            edge_points = [d['point'] for d in nearby_points]
             
-            # Compute confidence based on number of points and angle consistency
-            angle_std = np.std(angles)
-            confidence = len(cluster) / (1 + angle_std)
+            # Compute confidence based on number of points and peak height
+            confidence = len(nearby_points) * hist_smooth[peak_idx] / 100.0
             
             # Estimate sector number from angle
-            # Sector 20 is at top (0°), then clockwise: 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5
             sector = self._estimate_sector_from_boundary_angle(mean_angle)
             
             sector_boundaries.append(SectorBoundary(
@@ -543,15 +591,12 @@ class FeatureDetector:
                 confidence=confidence
             ))
         
-        # Merge nearby boundaries (within sector_width)
-        merged_boundaries = self._merge_nearby_boundaries(sector_boundaries, sector_width)
-        
         logger.debug(
-            f"Detected {len(merged_boundaries)} sector boundaries "
-            f"(from {len(transition_points)} transition points, {len(angle_clusters)} clusters)"
+            f"Detected {len(sector_boundaries)} sector boundaries "
+            f"(from {len(transition_data)} transition points, {len(peaks)} peaks)"
         )
         
-        return merged_boundaries
+        return sector_boundaries
     
     def _merge_nearby_boundaries(
         self, 
