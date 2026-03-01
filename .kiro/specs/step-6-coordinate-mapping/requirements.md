@@ -2,20 +2,23 @@
 
 ## Introduction
 
-This document specifies requirements for Step 6 - Coordinate Mapping using spiderweb-based calibration for the ARU-DART automatic dartboard scoring system. The system transforms pixel coordinates from each of 3 USB cameras to board-plane coordinates in millimeters using the dartboard's natural wire structure (spiderweb) as calibration reference points.
+This document specifies requirements for Step 6 - Coordinate Mapping using color-based calibration for the ARU-DART automatic dartboard scoring system. The system transforms pixel coordinates from each of 3 USB cameras to board-plane coordinates in millimeters using the dartboard's natural color patterns (black/white singles, red/green rings) as calibration reference points.
 
-This approach replaces the previous ARUCO marker-based calibration, which required external markers attached to the board. The spiderweb approach uses the dartboard's inherent geometry—bull center, ring edges, and radial wires—as natural fiducial points with known board coordinates.
+This approach replaces wire-based detection, which proved unreliable for thin modern dartboard wires, especially from angled cameras. Color-based sector boundary detection is more robust and works consistently across all camera angles.
 
 ## Glossary
 
-- **Spiderweb**: The wire structure of a dartboard consisting of concentric rings and radial wires that define scoring segments
+- **Spiderweb**: The wire structure of a dartboard consisting of concentric rings and radial wires that define scoring segments (NOTE: wires are too thin for reliable detection; color boundaries used instead)
+- **Sector_Boundary**: The boundary between two adjacent sectors, detected via color transitions (black/white in singles, red/green in rings)
+- **Color_Transition**: A change from one dartboard color to another (e.g., black to white, red to green) indicating a sector boundary
 - **Bull_Center**: The center point of the dartboard at board coordinates (0, 0)
 - **Double_Ring**: The outermost scoring ring at 162-170mm radius
 - **Triple_Ring**: The middle scoring ring at 99-107mm radius
 - **Single_Bull**: The outer bull ring at 6.35-15.9mm radius
 - **Double_Bull**: The inner bull (bullseye) at 0-6.35mm radius
-- **Radial_Wire**: One of 20 wires extending from bull to double ring, separating sectors
-- **Wire_Intersection**: A point where a radial wire crosses a ring edge
+- **Radial_Wire**: One of 20 wires extending from bull to double ring, separating sectors (NOTE: too thin for reliable detection; use color boundaries instead)
+- **Wire_Intersection**: A point where a radial wire crosses a ring edge (NOTE: replaced by boundary intersections)
+- **Boundary_Intersection**: A point where a sector boundary (detected via color) crosses a ring edge
 - **Homography**: A 3×3 transformation matrix mapping image plane to board plane
 - **Intrinsic_Calibration**: Camera-specific parameters (focal length, distortion) that correct lens effects
 - **Extrinsic_Calibration**: The homography transformation from camera view to board coordinates
@@ -26,18 +29,19 @@ This approach replaces the previous ARUCO marker-based calibration, which requir
 
 ### Requirement 1: Board Feature Detection (Per-Camera)
 
-**User Story:** As a system operator, I want the system to automatically detect dartboard features (bull, rings, radial wires) from each camera's perspective, so that per-camera calibration can be performed without external markers.
+**User Story:** As a system operator, I want the system to automatically detect dartboard features (bull, rings, sector boundaries via color) from each camera's perspective, so that per-camera calibration can be performed without external markers.
 
 #### Acceptance Criteria
 
-1. WHEN a camera image is provided, THE Feature_Detector SHALL detect the bull center with sub-pixel accuracy
+1. WHEN a camera image is provided, THE Feature_Detector SHALL detect the bull center using ellipse fitting (handles perspective distortion)
 2. WHEN a camera image is provided, THE Feature_Detector SHALL detect the double ring as an ellipse (perspective-distorted circle)
 3. WHEN a camera image is provided, THE Feature_Detector SHALL detect the triple ring as an ellipse (perspective-distorted circle)
-4. WHEN a camera image is provided, THE Feature_Detector SHALL detect at least 8 radial wires in the camera's "good view" region (near sectors)
-5. WHEN radial wires are detected, THE Feature_Detector SHALL identify wire intersections with ring edges
-6. IF the bull center cannot be detected, THEN THE Feature_Detector SHALL return an error indicating detection failure
-7. IF fewer than 4 wire intersections are detected, THEN THE Feature_Detector SHALL return an error indicating insufficient features
-8. THE Feature_Detector SHALL prioritize features in the camera's near sectors where perspective distortion is minimal
+4. WHEN a camera image is provided, THE Feature_Detector SHALL detect sector boundaries using color segmentation (black/white transitions in singles, red/green in rings)
+5. WHEN sector boundaries are detected, THE Feature_Detector SHALL identify at least 8 boundaries in the camera's "good view" region
+6. WHEN sector boundaries are detected, THE Feature_Detector SHALL identify boundary intersections with ring edges
+7. IF the bull center cannot be detected, THEN THE Feature_Detector SHALL return an error indicating detection failure
+8. IF fewer than 4 boundary intersections are detected, THEN THE Feature_Detector SHALL return an error indicating insufficient features
+9. THE Feature_Detector SHALL prioritize features in the camera's near sectors where perspective distortion is minimal
 
 ### Requirement 2: Feature-to-Board Coordinate Mapping (Per-Camera)
 
@@ -48,10 +52,11 @@ This approach replaces the previous ARUCO marker-based calibration, which requir
 1. THE Feature_Matcher SHALL map detected bull center to board coordinate (0, 0)
 2. THE Feature_Matcher SHALL map detected double ring edge points to 170mm radius
 3. THE Feature_Matcher SHALL map detected triple ring edge points to 107mm radius
-4. WHEN radial wires are detected, THE Feature_Matcher SHALL assign sector angles based on sector 20 being at top (12 o'clock)
-5. THE Feature_Matcher SHALL compute wire intersection board coordinates using known radii and sector angles
+4. WHEN sector boundaries are detected, THE Feature_Matcher SHALL assign sector numbers based on color pattern (alternating black/white) and sector 20 being at top (12 o'clock)
+5. THE Feature_Matcher SHALL compute boundary intersection board coordinates using known radii and sector angles
 6. WHEN matching features, THE Feature_Matcher SHALL use RANSAC to reject outliers from misdetected features
 7. THE Feature_Matcher SHALL weight features in the camera's near sectors more heavily than distorted far sectors
+8. THE Feature_Matcher SHALL use color boundary confidence scores when weighting point pairs
 
 ### Requirement 3: Homography Computation (Per-Camera)
 
@@ -177,7 +182,8 @@ Each of the 3 cameras has its own calibration due to different viewing angles:
 
 - Bull center detection accuracy: < 2mm error (all cameras)
 - Ring edge detection: > 50% of visible circumference detected per camera
-- Radial wire detection: ≥ 8 wires detected per camera (in good view region)
+- Sector boundary detection: ≥ 8 boundaries detected per camera (in good view region)
+- Boundary intersection detection: ≥ 12 intersections per camera
 - Homography reprojection error: < 5mm average per camera
 - Control point mapping error: < 5mm average
 - Full calibration time: < 5 seconds per camera

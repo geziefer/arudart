@@ -29,8 +29,35 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
                 'bull_max_radius_px': 30,
                 'canny_threshold_low': 50,
                 'canny_threshold_high': 150,
-                'hough_line_threshold': 50,
-                'min_wire_length_px': 50
+                # HSV color ranges
+                'black_singles_h_min': 0,
+                'black_singles_h_max': 180,
+                'black_singles_s_min': 0,
+                'black_singles_s_max': 50,
+                'black_singles_v_min': 0,
+                'black_singles_v_max': 80,
+                'white_singles_h_min': 0,
+                'white_singles_h_max': 180,
+                'white_singles_s_min': 0,
+                'white_singles_s_max': 50,
+                'white_singles_v_min': 150,
+                'white_singles_v_max': 255,
+                'red_ring_h_min_1': 0,
+                'red_ring_h_max_1': 10,
+                'red_ring_h_min_2': 170,
+                'red_ring_h_max_2': 180,
+                'red_ring_s_min': 100,
+                'red_ring_s_max': 255,
+                'red_ring_v_min': 100,
+                'red_ring_v_max': 255,
+                'green_ring_h_min': 40,
+                'green_ring_h_max': 80,
+                'green_ring_s_min': 100,
+                'green_ring_s_max': 255,
+                'green_ring_v_min': 100,
+                'green_ring_v_max': 255,
+                'min_boundary_edge_points': 10,
+                'boundary_clustering_angle_deg': 2.0
             }
         }
     }
@@ -51,7 +78,7 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
     # Create visualization
     vis = image.copy()
     
-    # Draw bull center (green circle)
+    # Draw bull center (green ellipse)
     if result.bull_center is not None:
         bull_u, bull_v = result.bull_center
         cv2.circle(vis, (int(bull_u), int(bull_v)), 5, (0, 255, 0), -1)
@@ -67,13 +94,31 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
                 if i % 3 == 0:  # Draw every 3rd point to reduce clutter
                     cv2.circle(vis, (int(x), int(y)), 2, color, -1)
     
-    # Draw radial wires (yellow lines)
-    for wire in result.radial_wires:
-        (x1, y1), (x2, y2) = wire.endpoints
-        cv2.line(vis, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 255), 2)
+    # Draw sector boundaries (yellow lines from bull center)
+    if result.bull_center is not None:
+        bull_u, bull_v = result.bull_center
+        for boundary in result.sector_boundaries:
+            # Draw line from bull center outward at boundary angle
+            angle_rad = np.radians(boundary.angle)
+            # Length of line (extend to edge of image)
+            length = 400
+            dx = np.sin(angle_rad)  # sin because 0° = up
+            dy = -np.cos(angle_rad)  # -cos because Y increases downward
+            
+            end_x = int(bull_u + length * dx)
+            end_y = int(bull_v + length * dy)
+            
+            cv2.line(vis, (int(bull_u), int(bull_v)), (end_x, end_y), (0, 255, 255), 1)
+            
+            # Draw sector number near the boundary
+            label_dist = 300
+            label_x = int(bull_u + label_dist * dx)
+            label_y = int(bull_v + label_dist * dy)
+            cv2.putText(vis, str(boundary.sector), (label_x, label_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
     
-    # Draw wire intersections (red dots)
-    for intersection in result.wire_intersections:
+    # Draw boundary intersections (red dots)
+    for intersection in result.boundary_intersections:
         x, y = intersection.pixel
         cv2.circle(vis, (int(x), int(y)), 4, (0, 0, 255), -1)
     
@@ -98,10 +143,10 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
     cv2.putText(vis, f"Triple ring: {len(result.ring_edges.get('triple_ring', []))} pts", 
                (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     y_offset += 25
-    cv2.putText(vis, f"Wires: {len(result.radial_wires)}", 
+    cv2.putText(vis, f"Boundaries: {len(result.sector_boundaries)}", 
                (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     y_offset += 25
-    cv2.putText(vis, f"Intersections: {len(result.wire_intersections)}", 
+    cv2.putText(vis, f"Intersections: {len(result.boundary_intersections)}", 
                (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     
     # Add validation options overlay at bottom
@@ -116,7 +161,7 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
     cv2.putText(vis, "VALIDATION OPTIONS:", 
                (10, options_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     options_y += 20
-    cv2.putText(vis, "1 = All OK  |  2 = Bull wrong  |  3 = Rings wrong  |  4 = Wires wrong", 
+    cv2.putText(vis, "1 = All OK  |  2 = Bull wrong  |  3 = Rings wrong  |  4 = Boundaries wrong", 
                (10, options_y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
     options_y += 18
     cv2.putText(vis, "5 = Intersections wrong  |  6 = Multiple issues  |  s = Skip  |  q = Quit", 
@@ -153,13 +198,13 @@ if __name__ == '__main__':
     
     print(f"Found {len(test_images)} pre-images to process")
     print("Instructions:")
-    print("  - Review the detected features (bull, rings, wires, intersections)")
+    print("  - Review the detected features (bull, rings, boundaries, intersections)")
     print("  - Press the corresponding key:")
     print("    1 = All OK")
     print("    2 = Bull wrong (wrong position or not the bull)")
     print("    3 = Rings wrong (ring edges incorrectly fitted)")
-    print("    4 = Wires wrong (not radial wires or wrong wires)")
-    print("    5 = Intersections wrong (incorrect wire-ring crossings)")
+    print("    4 = Boundaries wrong (not sector boundaries or wrong sectors)")
+    print("    5 = Intersections wrong (incorrect boundary-ring crossings)")
     print("    6 = Multiple issues (combination of above)")
     print("    s = Skip (no evaluation, just browse)")
     print("    q = Quit early")
@@ -188,7 +233,7 @@ if __name__ == '__main__':
             ord('1'): ('ALL_OK', 'All OK'),
             ord('2'): ('BULL_WRONG', 'Bull wrong'),
             ord('3'): ('RINGS_WRONG', 'Rings wrong'),
-            ord('4'): ('WIRES_WRONG', 'Wires wrong'),
+            ord('4'): ('BOUNDARIES_WRONG', 'Boundaries wrong'),
             ord('5'): ('INTERSECTIONS_WRONG', 'Intersections wrong'),
             ord('6'): ('MULTIPLE_ISSUES', 'Multiple issues'),
             ord('s'): ('SKIP', 'Skipped'),
@@ -220,8 +265,8 @@ if __name__ == '__main__':
             'image': image_path.name,
             'validation': validation_code,
             'bull_detected': result.bull_center is not None,
-            'num_wires': len(result.radial_wires),
-            'num_intersections': len(result.wire_intersections),
+            'num_boundaries': len(result.sector_boundaries),
+            'num_intersections': len(result.boundary_intersections),
             'double_ring_points': len(result.ring_edges.get('double_ring', [])),
             'triple_ring_points': len(result.ring_edges.get('triple_ring', [])),
             'error': result.error
@@ -245,7 +290,7 @@ if __name__ == '__main__':
     print(f"All OK: {sum(1 for r in results if r['validation'] == 'ALL_OK')}")
     print(f"Bull wrong: {sum(1 for r in results if r['validation'] == 'BULL_WRONG')}")
     print(f"Rings wrong: {sum(1 for r in results if r['validation'] == 'RINGS_WRONG')}")
-    print(f"Wires wrong: {sum(1 for r in results if r['validation'] == 'WIRES_WRONG')}")
+    print(f"Boundaries wrong: {sum(1 for r in results if r['validation'] == 'BOUNDARIES_WRONG')}")
     print(f"Intersections wrong: {sum(1 for r in results if r['validation'] == 'INTERSECTIONS_WRONG')}")
     print(f"Multiple issues: {sum(1 for r in results if r['validation'] == 'MULTIPLE_ISSUES')}")
     print(f"Skipped: {sum(1 for r in results if r['validation'] == 'SKIP')}")

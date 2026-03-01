@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation plan breaks down the spiderweb-based coordinate mapping system into discrete coding tasks. The system uses the dartboard's natural wire structure (bull, rings, radial wires) as calibration reference points, eliminating the need for external ARUCO markers. Each camera gets its own homography computed from features visible in its perspective.
+This implementation plan breaks down the color-based coordinate mapping system into discrete coding tasks. The system uses the dartboard's natural color patterns (black/white singles, red/green rings) as calibration reference points, which is more reliable than detecting thin wires. Each camera gets its own homography computed from features visible in its perspective.
 
 ## Tasks
 
@@ -14,16 +14,18 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
 
 - [ ] 2. Implement FeatureDetector class
   - [x] 2.1 Create `src/calibration/feature_detector.py` with basic structure
-    - Implement `__init__()` with config loading
+    - Implement `__init__()` with config loading (including HSV color ranges)
     - Implement `detect()` returning FeatureDetectionResult dataclass
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+    - Define SectorBoundary and BoundaryIntersection dataclasses
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
   
   - [x] 2.2 Implement bull center detection
-    - Use Hough circles to find bull (small dark circle)
-    - Filter by expected radius range (10-30 pixels)
-    - Select best candidate by position and accumulator value
-    - Refine center with sub-pixel accuracy
-    - _Requirements: 1.1, 1.6_
+    - Convert to HSV color space
+    - Create masks for bull colors (red for double bull, green for single bull)
+    - Apply morphological operations to clean mask
+    - Find contours and fit ellipse (handles perspective distortion)
+    - Select best ellipse by circularity and position
+    - _Requirements: 1.1, 1.7_
   
   - [x] 2.3 Implement ring edge detection
     - Apply Canny edge detection
@@ -32,53 +34,62 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Sample points along fitted ellipses
     - _Requirements: 1.2, 1.3_
   
-  - [x] 2.4 Implement radial wire detection
-    - Use HoughLinesP to detect line segments
-    - Filter lines passing near bull center
-    - Cluster lines by angle (18° sectors)
-    - Select strongest line per cluster
-    - _Requirements: 1.4, 1.8_
+  - [x] 2.4 Implement sector boundary detection using color segmentation
+    - Convert to HSV color space
+    - Create masks for black/white singles (low/high value, low saturation)
+    - Create masks for red/green rings (hue-based)
+    - Find color transition points (black→white, red→green)
+    - Cluster transition points by angle from bull center (18° sectors)
+    - Fit lines through clusters to get sector boundaries
+    - Assign sector numbers based on alternating color pattern
+    - _Requirements: 1.4, 1.5, 1.9_
   
-  - [x] 2.5 Implement wire-ring intersection finding
-    - Compute intersections between detected wires and ring ellipses
-    - Associate intersections with wire index and ring type
-    - _Requirements: 1.5, 1.7_
+  - [x] 2.5 Implement boundary-ring intersection finding
+    - Compute intersections between sector boundaries (angles) and ring ellipses
+    - Associate intersections with sector number and ring type
+    - Store confidence scores from color detection
+    - _Requirements: 1.6, 1.8_
   
   - [x] 2.6 Write unit tests for FeatureDetector
-    - Test bull detection with synthetic dartboard images
+    - Test bull detection with synthetic dartboard images (colored bull)
     - Test ring detection with known ellipse geometry
-    - Test wire detection with synthetic line patterns
+    - Test color segmentation with synthetic black/white/red/green patterns
+    - Test sector boundary detection with known color transitions
     - Test error handling for missing features
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9_
 
 - [x] 3. Checkpoint - Verify feature detection works
   - Test FeatureDetector on real camera images
-  - Verify bull center detection accuracy
+  - Verify bull center detection accuracy (ellipse-based)
   - Verify ring edge detection coverage
-  - Verify radial wire detection count (≥8 in good view region)
+  - Verify sector boundary detection count (≥8 in good view region)
+  - Verify color segmentation works across all cameras (including angled cam2)
   - Ask user if questions arise
 
 - [ ] 4. Implement FeatureMatcher class
   - [x] 4.1 Create `src/calibration/feature_matcher.py`
     - Implement `__init__()` with board geometry constants
-    - Implement `match()` returning list of (pixel, board) point pairs
-    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+    - Implement `match()` returning list of (pixel, board, confidence) tuples
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.8_
   
   - [x] 4.2 Implement sector 20 identification
-    - Find wire closest to vertical (pointing up from bull)
-    - Use image orientation to determine top of board
+    - Find sector boundary closest to vertical (pointing up from bull)
+    - Use color pattern to confirm sector 20 (boundary between sectors 5 and 20)
+    - Weight by confidence from color detection
     - _Requirements: 2.4_
   
-  - [x] 4.3 Implement wire sector assignment
-    - Assign sector numbers to detected wires based on angle from sector 20
+  - [x] 4.3 Implement sector boundary assignment
+    - Sector numbers already assigned during color detection (alternating pattern)
+    - Verify sector assignments relative to sector 20 boundary
     - Use known sector order: 20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5
-    - _Requirements: 2.4, 2.5_
+    - _Requirements: 2.4, 2.5, 2.8_
   
   - [x] 4.4 Implement board coordinate computation
     - Map bull center to (0, 0)
     - Map ring edge points to known radii (170mm, 107mm)
-    - Map wire intersections using radius and sector angle
-    - _Requirements: 2.1, 2.2, 2.3, 2.5_
+    - Map boundary intersections using radius and sector angle
+    - Include confidence weights from color detection
+    - _Requirements: 2.1, 2.2, 2.3, 2.5, 2.8_
   
   - [x] 4.5 Write property test for bull center mapping
     - **Property 1: Bull Center Maps to Origin**
@@ -201,15 +212,15 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - Display reprojection error and save results
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 11. Implement spiderweb calibration script
-  - [ ] 11.1 Create `calibration/calibrate_spiderweb.py` script
+- [ ] 11. Implement color-based calibration script
+  - [ ] 11.1 Create `calibration/calibrate_color_boundaries.py` script
     - Initialize cameras and capture frames
-    - Run FeatureDetector on each camera
-    - Run FeatureMatcher to get point pairs
+    - Run FeatureDetector on each camera (color-based detection)
+    - Run FeatureMatcher to get point pairs with confidence weights
     - Run HomographyCalculator to compute and save homography
     - Display summary with feature counts and reprojection errors
-    - Add visualization option to show detected features
-    - _Requirements: 1.1-1.8, 2.1-2.7, 3.1-3.5_
+    - Add visualization option to show detected features and color masks
+    - _Requirements: 1.1-1.9, 2.1-2.8, 3.1-3.5_
 
 - [ ] 12. Implement calibration verification script
   - [ ] 12.1 Create `calibration/verify_calibration.py` script
@@ -246,33 +257,35 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
     - _Requirements: 6.2, 6.3_
   
   - [ ] 13.4 Add command-line flags for calibration
-    - Add `--calibrate` flag to run spiderweb calibration at startup
+    - Add `--calibrate` flag to run color-based calibration at startup
     - Add `--calibrate-intrinsic` flag to run intrinsic calibration
     - Add `--verify-calibration` flag to run verification script
     - _Requirements: 5.1, 7.1, 8.1_
   
   - [ ] 13.5 Add keyboard shortcut for runtime calibration
-    - Add 'c' key handler to trigger spiderweb calibration in dev mode
+    - Add 'c' key handler to trigger color-based calibration in dev mode
     - Run calibration for all cameras
     - Reload coordinate mapper after calibration
     - _Requirements: 5.4_
 
 - [ ] 14. Add calibration visualization for debugging
   - [ ] 14.1 Implement calibration visualization overlay
-    - Draw detected bull center (green circle)
+    - Draw detected bull center (green ellipse)
     - Draw detected ring edges (blue ellipses)
-    - Draw detected radial wires (yellow lines)
-    - Draw wire intersections (red dots)
+    - Draw detected sector boundaries (yellow lines from bull center)
+    - Draw boundary intersections (red dots)
+    - Draw color masks (overlay showing detected black/white/red/green regions)
     - Add toggle with 'v' key in dev mode
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.9_
 
 - [ ] 15. Final checkpoint - End-to-end testing
-  - Run full calibration workflow (intrinsic + spiderweb)
+  - Run full calibration workflow (intrinsic + color-based)
   - Verify coordinate transformation in main.py
   - Test with actual dart throws
   - Verify multi-camera detections produce consistent board coordinates
   - Run verification script to measure accuracy (< 5mm average error)
   - Test continuous calibration: drift detection and recalibration
+  - Verify color-based detection works from all camera angles (especially cam2)
   - Ensure all tests pass
   - Ask user if questions arise
 
@@ -285,4 +298,6 @@ This implementation plan breaks down the spiderweb-based coordinate mapping syst
 - Unit tests validate specific examples and edge cases
 - Integration happens incrementally to catch errors early
 - Intrinsic calibration (chessboard) is preserved from original design - it handles lens distortion which is camera-specific
-- Spiderweb calibration replaces ARUCO markers for extrinsic calibration
+- Color-based calibration replaces wire detection for extrinsic calibration - more robust for thin modern dartboard wires
+- HSV color space used for better color segmentation under LED lighting
+- Ellipse fitting used for bull detection to handle perspective distortion from angled cameras

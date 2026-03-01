@@ -2,9 +2,9 @@
 
 ## Overview
 
-This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using spiderweb-based calibration. The system uses the dartboard's natural wire structure—bull center, ring edges, and radial wires—as calibration reference points, eliminating the need for external ARUCO markers.
+This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using color-based calibration. The system uses the dartboard's natural color patterns—bull center, ring edges, and sector color boundaries—as calibration reference points, eliminating the need for external ARUCO markers.
 
-Each of the 3 cameras has its own homography matrix computed from features visible in that camera's perspective. The bull center serves as a common anchor point (0, 0), while wire intersections in each camera's "good view" region provide additional correspondence points for robust homography computation.
+Each of the 3 cameras has its own homography matrix computed from features visible in that camera's perspective. The bull center serves as a common anchor point (0, 0), while color-based sector boundaries (black/white transitions in singles, red/green in rings) provide additional correspondence points for robust homography computation. This approach is more reliable than wire detection, especially from angled camera perspectives.
 
 **Key Design Principles**:
 - Per-camera calibration to handle perspective distortion
@@ -121,25 +121,25 @@ class FeatureDetector:
     def detect_ring_edges(self, image: np.ndarray, 
                           bull_center: tuple[float, float]) -> dict[str, list[tuple]]
     
-    def detect_radial_wires(self, image: np.ndarray,
-                            bull_center: tuple[float, float]) -> list[tuple]
+    def detect_sector_boundaries(self, image: np.ndarray,
+                                 bull_center: tuple[float, float]) -> list[tuple]
     
-    def find_wire_intersections(self, ring_edges: dict, 
-                                radial_wires: list) -> list[WireIntersection]
+    def find_boundary_intersections(self, ring_edges: dict, 
+                                    sector_boundaries: list) -> list[BoundaryIntersection]
 ```
 
 **Algorithm - Bull Center Detection**:
 ```
 detect_bull_center(image):
-    1. Convert to grayscale
-    2. Apply Gaussian blur (kernel=5)
-    3. Use HoughCircles to find circles with radius 10-30 pixels
-       (bull appears as small dark circle)
-    4. If multiple circles found, select by:
+    1. Convert to HSV color space
+    2. Create mask for bull colors (red for double bull, green for single bull)
+    3. Apply morphological operations to clean mask
+    4. Find contours in bull region
+    5. Fit ellipse to bull contours (handles perspective distortion)
+    6. If multiple ellipses found, select by:
        - Closest to image center (bull should be roughly centered)
-       - Highest accumulator value (strongest circle)
-    5. Refine center using contour moments or template matching
-    6. Return (u, v) or None if not found
+       - Best circularity score (most circular in perspective)
+    7. Return ellipse center (u, v) or None if not found
 ```
 
 **Algorithm - Ring Edge Detection**:
@@ -156,36 +156,49 @@ detect_ring_edges(image, bull_center):
     4. Return dict with 'double_ring' and 'triple_ring' point lists
 ```
 
-**Algorithm - Radial Wire Detection**:
+**Algorithm - Sector Boundary Detection**:
 ```
-detect_radial_wires(image, bull_center):
-    1. Convert to grayscale
-    2. Apply Canny edge detection
-    3. Use HoughLinesP to detect line segments
-    4. Filter lines that:
-       - Pass near bull center (within 20 pixels)
-       - Have length > 50 pixels
-       - Are roughly radial (angle from bull matches line angle)
-    5. Cluster lines by angle (18° sectors)
-    6. For each cluster, select strongest line
-    7. Return list of (rho, theta, endpoint1, endpoint2)
+detect_sector_boundaries(image, bull_center):
+    1. Convert to HSV color space
+    2. Create masks for different board regions:
+       - Black singles mask (low saturation, low value)
+       - White/cream singles mask (low saturation, high value)
+       - Red ring mask (hue ~0°, high saturation)
+       - Green ring mask (hue ~120°, high saturation)
+    3. For singles region (between triple and double rings):
+       a. Find black/white color transitions
+       b. Extract transition edge points
+       c. Cluster edge points by angle from bull center (18° sectors)
+       d. Fit line through each cluster (sector boundary)
+    4. For ring regions (double and triple):
+       a. Find red/green color transitions
+       b. Extract transition points on ring circumference
+       c. Use transitions to refine sector boundary angles
+    5. Merge sector boundaries from singles and rings
+    6. Return list of (angle, confidence, edge_points)
 ```
 
-**Algorithm - Wire Intersection Finding**:
+**Algorithm - Boundary-Ring Intersection Finding**:
 ```
-find_wire_intersections(ring_edges, radial_wires):
+find_boundary_intersections(ring_edges, sector_boundaries):
     intersections = []
-    for wire in radial_wires:
+    for boundary in sector_boundaries:
         for ring_type in ['double_ring', 'triple_ring']:
-            # Find where wire crosses ring
-            intersection = line_ellipse_intersection(wire, ring_edges[ring_type])
+            # Find where sector boundary crosses ring
+            # Boundary is defined by angle from bull center
+            intersection = angle_ellipse_intersection(
+                boundary.angle, 
+                bull_center, 
+                ring_edges[ring_type]
+            )
             if intersection:
-                # Estimate sector based on wire angle
-                sector = estimate_sector_from_angle(wire.angle)
-                intersections.append(WireIntersection(
+                # Sector is known from boundary identification
+                sector = boundary.sector
+                intersections.append(BoundaryIntersection(
                     pixel=intersection,
                     ring_type=ring_type,
-                    sector_estimate=sector
+                    sector=sector,
+                    confidence=boundary.confidence
                 ))
     return intersections
 ```
@@ -201,11 +214,11 @@ class FeatureMatcher:
     
     def match(self, detection_result: FeatureDetectionResult) -> list[PointPair]
     
-    def identify_sector_20(self, radial_wires: list, 
-                           image_orientation: str) -> int | None
+    def identify_sector_20(self, sector_boundaries: list, 
+                           image_orientation: str) -> SectorBoundary | None
     
-    def assign_wire_sectors(self, radial_wires: list, 
-                            sector_20_index: int) -> dict[int, int]
+    def assign_boundary_sectors(self, sector_boundaries: list, 
+                                sector_20_boundary: SectorBoundary) -> list[SectorBoundary]
 ```
 
 **Algorithm - Feature Matching**:
@@ -217,25 +230,24 @@ match(detection_result):
     if detection_result.bull_center:
         point_pairs.append((detection_result.bull_center, (0, 0)))
     
-    # 2. Identify sector 20 (top of board)
-    sector_20_wire = identify_sector_20(detection_result.radial_wires)
+    # 2. Identify sector 20 (top of board) from color boundaries
+    sector_20_boundary = identify_sector_20(detection_result.sector_boundaries)
     
-    # 3. Assign sectors to detected wires
-    wire_sectors = assign_wire_sectors(detection_result.radial_wires, sector_20_wire)
+    # 3. Sector boundaries already have sector assignments from color detection
+    # Each boundary knows its sector number from the alternating black/white pattern
     
-    # 4. For each wire intersection, compute board coordinates
-    for intersection in detection_result.wire_intersections:
-        wire_idx = intersection.wire_index
-        if wire_idx in wire_sectors:
-            sector = wire_sectors[wire_idx]
-            angle = sector_to_angle(sector)  # 20 at 0°, clockwise
-            radius = 170 if intersection.ring_type == 'double_ring' else 107
-            
-            # Board coordinates
-            x = radius * cos(angle)
-            y = radius * sin(angle)
-            
-            point_pairs.append((intersection.pixel, (x, y)))
+    # 4. For each boundary intersection, compute board coordinates
+    for intersection in detection_result.boundary_intersections:
+        sector = intersection.sector
+        angle = sector_to_angle(sector)  # 20 at 0°, clockwise
+        radius = 170 if intersection.ring_type == 'double_ring' else 107
+        
+        # Board coordinates
+        x = radius * cos(angle)
+        y = radius * sin(angle)
+        
+        # Weight by confidence (color boundaries are more reliable than wires)
+        point_pairs.append((intersection.pixel, (x, y), intersection.confidence))
     
     # 5. Add ring edge points (sampled along ellipse)
     for ring_type, radius in [('double_ring', 170), ('triple_ring', 107)]:
@@ -244,32 +256,35 @@ match(detection_result):
             angle = atan2(pixel_point[1] - bull_v, pixel_point[0] - bull_u)
             x = radius * cos(angle)
             y = radius * sin(angle)
-            point_pairs.append((pixel_point, (x, y)))
+            point_pairs.append((pixel_point, (x, y), 1.0))
     
     return point_pairs
 ```
 
 **Algorithm - Sector 20 Identification**:
 ```
-identify_sector_20(radial_wires, image_orientation='top'):
+identify_sector_20(sector_boundaries, image_orientation='top'):
     # Sector 20 is at top of board (12 o'clock)
-    # Find wire closest to vertical (pointing up from bull)
+    # Find boundary closest to vertical (pointing up from bull)
+    # The boundary to the LEFT of sector 20 (between 5 and 20) should point up
     
-    best_wire = None
+    best_boundary = None
     best_score = -inf
     
-    for i, wire in enumerate(radial_wires):
-        # Wire angle relative to vertical
-        angle_from_vertical = abs(wire.angle - 90°)  # 90° = pointing up
+    for boundary in sector_boundaries:
+        # Boundary angle relative to vertical
+        angle_from_vertical = abs(boundary.angle - 90°)  # 90° = pointing up
         
-        # Score: prefer wires pointing up
-        score = -angle_from_vertical
+        # Score: prefer boundaries pointing up, weighted by confidence
+        score = -angle_from_vertical * boundary.confidence
         
         if score > best_score:
             best_score = score
-            best_wire = i
+            best_boundary = boundary
     
-    return best_wire
+    # Once sector 20 boundary is found, assign sector numbers to all boundaries
+    # based on angular offset (18° per sector, clockwise)
+    return best_boundary
 ```
 
 ### 3. HomographyCalculator Class
@@ -451,22 +466,23 @@ check_and_recalibrate(camera_id, image):
 class FeatureDetectionResult:
     bull_center: tuple[float, float] | None
     ring_edges: dict[str, list[tuple[float, float]]]  # 'double_ring', 'triple_ring'
-    radial_wires: list[RadialWire]
-    wire_intersections: list[WireIntersection]
+    sector_boundaries: list[SectorBoundary]
+    boundary_intersections: list[BoundaryIntersection]
     detection_time_ms: float
     
 @dataclass
-class RadialWire:
-    angle: float  # degrees from vertical
-    endpoints: tuple[tuple[float, float], tuple[float, float]]
+class SectorBoundary:
+    angle: float  # degrees from vertical (0° = sector 20 at top)
+    sector: int  # sector number (1-20)
+    edge_points: list[tuple[float, float]]  # color transition points
     confidence: float
 
 @dataclass
-class WireIntersection:
+class BoundaryIntersection:
     pixel: tuple[float, float]
     ring_type: str  # 'double_ring' or 'triple_ring'
-    wire_index: int
-    sector_estimate: int | None
+    sector: int  # sector number (1-20)
+    confidence: float
 ```
 
 ### CalibrationStatus
@@ -495,8 +511,32 @@ bull_min_radius_px = 10
 bull_max_radius_px = 30
 canny_threshold_low = 50
 canny_threshold_high = 150
-hough_line_threshold = 50
-min_wire_length_px = 50
+
+# HSV color ranges for dartboard (Winmau Blade 6)
+[calibration.feature_detection.colors]
+# Black singles: low saturation, low value
+black_singles_h = [0, 180]
+black_singles_s = [0, 50]
+black_singles_v = [0, 80]
+
+# White/cream singles: low saturation, high value
+white_singles_h = [0, 180]
+white_singles_s = [0, 50]
+white_singles_v = [150, 255]
+
+# Red rings (double bull, red segments): hue ~0° or ~180°
+red_ring_h = [0, 10, 170, 180]  # wraps around
+red_ring_s = [100, 255]
+red_ring_v = [100, 255]
+
+# Green rings (single bull, green segments): hue ~120°
+green_ring_h = [40, 80]
+green_ring_s = [100, 255]
+green_ring_v = [100, 255]
+
+# Color transition detection
+min_boundary_edge_points = 10
+boundary_clustering_angle_deg = 2.0
 
 [calibration.homography]
 ransac_threshold_px = 5.0
@@ -534,7 +574,8 @@ square_size_mm = 25.0
     "bull_center": true,
     "double_ring_points": 8,
     "triple_ring_points": 6,
-    "wire_intersections": 5
+    "sector_boundaries": 12,
+    "boundary_intersections": 18
   },
   "calibration_date": "2024-01-15T10:35:00"
 }

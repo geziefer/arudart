@@ -61,14 +61,51 @@ calibration_dir = "calibration"
 drift_threshold_mm = 3.0  # Trigger recalibration if drift exceeds this
 max_calibration_failures = 3  # Enter error state after this many consecutive failures
 
-# Feature detection parameters for spiderweb calibration
+# Feature detection parameters for color-based calibration
 [calibration.feature_detection]
 bull_min_radius_px = 10  # Minimum bull radius in pixels
 bull_max_radius_px = 30  # Maximum bull radius in pixels
 canny_threshold_low = 50  # Canny edge detection low threshold
 canny_threshold_high = 150  # Canny edge detection high threshold
-hough_line_threshold = 50  # Hough line detection threshold
-min_wire_length_px = 50  # Minimum radial wire length in pixels
+
+# HSV color ranges for dartboard (Winmau Blade 6 under LED lighting)
+# Black singles: low saturation, low value
+black_singles_h_min = 0
+black_singles_h_max = 180
+black_singles_s_min = 0
+black_singles_s_max = 50
+black_singles_v_min = 0
+black_singles_v_max = 80
+
+# White/cream singles: low saturation, high value
+white_singles_h_min = 0
+white_singles_h_max = 180
+white_singles_s_min = 0
+white_singles_s_max = 50
+white_singles_v_min = 150
+white_singles_v_max = 255
+
+# Red rings (double bull, red segments): hue ~0° or ~170-180°
+red_ring_h_min_1 = 0
+red_ring_h_max_1 = 10
+red_ring_h_min_2 = 170
+red_ring_h_max_2 = 180
+red_ring_s_min = 100
+red_ring_s_max = 255
+red_ring_v_min = 100
+red_ring_v_max = 255
+
+# Green rings (single bull, green segments): hue ~40-80°
+green_ring_h_min = 40
+green_ring_h_max = 80
+green_ring_s_min = 100
+green_ring_s_max = 255
+green_ring_v_min = 100
+green_ring_v_max = 255
+
+# Color transition detection
+min_boundary_edge_points = 10
+boundary_clustering_angle_deg = 2.0
 
 # Homography computation parameters
 [calibration.homography]
