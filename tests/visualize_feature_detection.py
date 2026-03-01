@@ -21,7 +21,7 @@ from src.calibration.feature_detector import FeatureDetector
 def visualize_detection(image_path: str, save_output: bool = True, window_name: str = None):
     """Visualize feature detection on a single image."""
     
-    # Configuration
+    # Configuration - use relaxed HSV ranges that work better
     config = {
         'calibration': {
             'feature_detection': {
@@ -29,35 +29,35 @@ def visualize_detection(image_path: str, save_output: bool = True, window_name: 
                 'bull_max_radius_px': 30,
                 'canny_threshold_low': 50,
                 'canny_threshold_high': 150,
-                # HSV color ranges
+                # HSV color ranges - RELAXED for better detection
                 'black_singles_h_min': 0,
                 'black_singles_h_max': 180,
                 'black_singles_s_min': 0,
-                'black_singles_s_max': 50,
+                'black_singles_s_max': 80,  # Relaxed from 50
                 'black_singles_v_min': 0,
-                'black_singles_v_max': 80,
+                'black_singles_v_max': 100,  # Relaxed from 80
                 'white_singles_h_min': 0,
                 'white_singles_h_max': 180,
                 'white_singles_s_min': 0,
-                'white_singles_s_max': 50,
-                'white_singles_v_min': 150,
+                'white_singles_s_max': 80,  # Relaxed from 50
+                'white_singles_v_min': 120,  # Relaxed from 150
                 'white_singles_v_max': 255,
                 'red_ring_h_min_1': 0,
-                'red_ring_h_max_1': 10,
-                'red_ring_h_min_2': 170,
+                'red_ring_h_max_1': 15,  # Relaxed from 10
+                'red_ring_h_min_2': 165,  # Relaxed from 170
                 'red_ring_h_max_2': 180,
-                'red_ring_s_min': 100,
+                'red_ring_s_min': 80,  # Relaxed from 100
                 'red_ring_s_max': 255,
-                'red_ring_v_min': 100,
+                'red_ring_v_min': 80,  # Relaxed from 100
                 'red_ring_v_max': 255,
-                'green_ring_h_min': 40,
-                'green_ring_h_max': 80,
-                'green_ring_s_min': 100,
+                'green_ring_h_min': 35,  # Relaxed from 40
+                'green_ring_h_max': 85,  # Relaxed from 80
+                'green_ring_s_min': 80,  # Relaxed from 100
                 'green_ring_s_max': 255,
-                'green_ring_v_min': 100,
+                'green_ring_v_min': 80,  # Relaxed from 100
                 'green_ring_v_max': 255,
-                'min_boundary_edge_points': 10,
-                'boundary_clustering_angle_deg': 2.0
+                'min_boundary_edge_points': 5,  # Relaxed from 10
+                'boundary_clustering_angle_deg': 3.0  # Relaxed from 2.0
             }
         }
     }

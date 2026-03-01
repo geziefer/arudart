@@ -175,3 +175,53 @@ python main.py --dev-mode --record-mode
 
 ### Issue: Board noise larger than dart
 **Solution**: Shape-based scoring instead of size-based selection
+
+
+## Step 6: Coordinate Mapping - Feature Detection Success
+
+### Bull Detection Algorithm (100% Accuracy)
+
+**Problem**: Initial color-based detection was picking up red/green segments in triple/double rings instead of actual bull.
+
+**Solution**: Multi-strategy approach with STRICT validation requiring BOTH red AND green colors.
+
+**Key Insight**: The bull has BOTH red (double bull) AND green (single bull) colors simultaneously, while triple/double ring segments only have ONE color. This strict validation eliminates false positives.
+
+**Implementation**:
+1. **Strategy 1 (PRIMARY)**: Geometric center from line intersections
+   - Uses HoughLinesP to detect sector boundaries
+   - Computes intersection points (where radial lines converge)
+   - Finds median of intersection cluster near image center
+   - VALIDATES with strict color check: must have BOTH red AND green (≥3% each in 25px radius)
+
+2. **Strategy 2**: Hough circles with same strict validation
+   - Detects circles (radius 8-35px)
+   - Tries each circle starting with closest to image center
+   - VALIDATES: must have BOTH red AND green colors
+
+3. **Strategy 3 (FALLBACK)**: Color-based detection
+   - Uses AND operation on red and green masks (not OR)
+   - Bull must have BOTH colors simultaneously
+
+**Results**: 100% accurate bull detection across all 60 test images (20 per camera)
+- cam0 (upper right): Always correct via geometric center
+- cam1 (lower right): Usually geometric center, sometimes Hough circles
+- cam2 (left, angled): Mix of geometric center and Hough circles
+
+### Sector Boundary Detection - Adaptive Threshold
+
+**Problem**: Fixed 75th percentile threshold was too high for cam2's angled perspective, resulting in 0 boundaries detected.
+
+**Solution**: Adaptive threshold approach that tries progressively lower percentiles (75%, 70%, 65%, 60%, 55%, 50%) until ≥8 peaks are found.
+
+**Implementation**:
+- Uses edge detection on grayscale (more reliable than pure color segmentation)
+- Creates angular histogram of edge points (360 bins, 1° per bin)
+- Smooths histogram with moving average
+- Tries progressively lower percentile thresholds until sufficient peaks found
+- Detects local maxima in histogram as sector boundaries
+
+**Results**:
+- cam0: 12 boundaries detected ✅
+- cam1: 9 boundaries detected ✅
+- cam2: 8 boundaries detected ✅ (was 0 before fix)

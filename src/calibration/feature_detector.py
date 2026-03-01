@@ -192,11 +192,14 @@ class FeatureDetector:
     
     def detect_bull_center(self, image: np.ndarray) -> Optional[tuple[float, float]]:
         """
-        Detect the bull center using ellipse fitting with HSV color masks.
+        Detect the bull center using multiple strategies with strict validation.
         
-        The bull appears as colored circles (red for double bull, green for single bull).
-        This method uses HSV color segmentation to find the bull region, then fits
-        an ellipse to handle perspective distortion from angled cameras.
+        Strategy priority:
+        1. Geometric center from line intersections (most reliable)
+        2. Hough circles with strict color validation
+        3. Color-based detection as last resort
+        
+        The bull MUST have both red and green colors (double bull + single bull).
         
         Args:
             image: Input image (BGR, 8-bit)
@@ -204,102 +207,214 @@ class FeatureDetector:
         Returns:
             (u, v) pixel coordinates of bull center, or None if not detected
         """
-        # Convert to HSV color space
+        image_center = (image.shape[1] / 2, image.shape[0] / 2)
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         
-        # Create masks for bull colors (red and green)
+        # Strategy 1: Find geometric center from line intersections
+        # This is the most reliable - all sector boundaries converge at the bull
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, self.canny_threshold_low, self.canny_threshold_high)
+        
+        # Detect lines (sector boundaries)
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1,
+            theta=np.pi/180,
+            threshold=50,
+            minLineLength=50,
+            maxLineGap=10
+        )
+        
+        if lines is not None and len(lines) > 10:
+            # Find intersection points
+            intersections = []
+            for i in range(min(len(lines), 50)):  # Limit to first 50 lines for performance
+                for j in range(i+1, min(len(lines), 50)):
+                    x1, y1, x2, y2 = lines[i][0]
+                    x3, y3, x4, y4 = lines[j][0]
+                    
+                    denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
+                    if abs(denom) < 1e-6:
+                        continue
+                    
+                    t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / denom
+                    ix = x1 + t*(x2-x1)
+                    iy = y1 + t*(y2-y1)
+                    
+                    # Only consider intersections near image center
+                    if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
+                        dist = np.sqrt((ix - image_center[0])**2 + (iy - image_center[1])**2)
+                        if dist < 150:  # Within 150 pixels of image center
+                            intersections.append((ix, iy))
+            
+            if len(intersections) > 20:
+                # Find the densest cluster of intersections
+                intersections = np.array(intersections)
+                
+                # Use median (more robust than mean)
+                center_x = np.median(intersections[:, 0])
+                center_y = np.median(intersections[:, 1])
+                
+                # Verify this is the bull by checking for red AND green colors
+                if self._verify_bull_colors(hsv, center_x, center_y, radius=25):
+                    logger.debug(
+                        f"Bull center detected via line intersections: ({center_x:.2f}, {center_y:.2f})"
+                    )
+                    return (float(center_x), float(center_y))
+                else:
+                    logger.debug(
+                        f"Line intersection center ({center_x:.1f}, {center_y:.1f}) "
+                        f"rejected: insufficient bull colors"
+                    )
+        
+        # Strategy 2: Hough circles with STRICT color validation
+        blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+        circles = cv2.HoughCircles(
+            blurred,
+            cv2.HOUGH_GRADIENT,
+            dp=1,
+            minDist=50,
+            param1=100,
+            param2=15,
+            minRadius=8,
+            maxRadius=35
+        )
+        
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            
+            # Sort by distance from image center
+            circles_with_dist = []
+            for (x, y, r) in circles:
+                dist = np.sqrt((x - image_center[0])**2 + (y - image_center[1])**2)
+                if dist < 150:  # Must be near image center
+                    circles_with_dist.append((x, y, r, dist))
+            
+            circles_with_dist.sort(key=lambda c: c[3])  # Sort by distance
+            
+            # Try each circle, starting with closest to center
+            for x, y, r, dist in circles_with_dist:
+                # STRICT validation: must have BOTH red and green colors
+                if self._verify_bull_colors(hsv, x, y, radius=int(r * 1.5)):
+                    logger.debug(
+                        f"Bull center detected via Hough circles: ({x}, {y}), "
+                        f"radius={r}px, dist_from_center={dist:.1f}px"
+                    )
+                    return (float(x), float(y))
+            
+            logger.debug("Hough circles found but none passed color validation")
+        
+        # Strategy 3: Color-based detection (last resort)
+        logger.debug("Geometric and Hough methods failed, trying color-based detection")
+        
+        # Create masks for bull colors
         red_mask1 = cv2.inRange(hsv, np.array(self.red_ring_range_1[0]), np.array(self.red_ring_range_1[1]))
         red_mask2 = cv2.inRange(hsv, np.array(self.red_ring_range_2[0]), np.array(self.red_ring_range_2[1]))
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
         
         green_mask = cv2.inRange(hsv, np.array(self.green_ring_range[0]), np.array(self.green_ring_range[1]))
         
-        # Combine red and green masks (bull contains both)
-        bull_mask = cv2.bitwise_or(red_mask, green_mask)
+        # Bull must have BOTH red and green
+        bull_mask = cv2.bitwise_and(red_mask, green_mask)
         
-        # Apply morphological operations to clean up the mask
+        # Clean up
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         bull_mask = cv2.morphologyEx(bull_mask, cv2.MORPH_CLOSE, kernel)
         bull_mask = cv2.morphologyEx(bull_mask, cv2.MORPH_OPEN, kernel)
         
-        # Find contours in bull region
+        # Find contours
         contours, _ = cv2.findContours(bull_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         if not contours:
-            logger.debug("No contours found in bull color mask")
+            logger.debug("No contours found with both red and green colors")
             return None
         
-        # Filter contours by area (bull should be reasonably sized)
-        image_center = (image.shape[1] / 2, image.shape[0] / 2)
+        # Find smallest contour near image center
         min_area = np.pi * self.bull_min_radius_px ** 2
-        max_area = np.pi * self.bull_max_radius_px ** 2 * 4  # Allow for ellipse distortion
+        max_area = np.pi * self.bull_max_radius_px ** 2 * 4
         
-        candidate_contours = []
+        best_contour = None
+        best_score = float('inf')
+        
         for contour in contours:
             area = cv2.contourArea(contour)
             if area < min_area or area > max_area:
                 continue
             
-            # Compute distance from image center
             M = cv2.moments(contour)
             if M['m00'] > 0:
                 cx = M['m10'] / M['m00']
                 cy = M['m01'] / M['m00']
-                dist_from_center = np.sqrt((cx - image_center[0])**2 + (cy - image_center[1])**2)
+                dist = np.sqrt((cx - image_center[0])**2 + (cy - image_center[1])**2)
                 
-                candidate_contours.append({
-                    'contour': contour,
-                    'center': (cx, cy),
-                    'area': area,
-                    'dist_from_center': dist_from_center
-                })
-        
-        if not candidate_contours:
-            logger.debug("No suitable bull contours found (area or position filter)")
-            return None
-        
-        # Select best candidate (closest to image center, reasonable area)
-        image_diagonal = np.sqrt(image.shape[1]**2 + image.shape[0]**2)
-        best_contour = None
-        best_score = -float('inf')
-        
-        for candidate in candidate_contours:
-            # Score: prefer contours near image center with reasonable area
-            normalized_dist = candidate['dist_from_center'] / image_diagonal
-            area_score = 1.0 if min_area <= candidate['area'] <= max_area else 0.5
-            score = area_score / (1 + normalized_dist)
-            
-            if score > best_score:
-                best_score = score
-                best_contour = candidate
+                if dist > 150:
+                    continue
+                
+                # Score: prefer small + close to center
+                score = (area / max_area) + (dist / 150)
+                
+                if score < best_score:
+                    best_score = score
+                    best_contour = {'center': (cx, cy), 'contour': contour, 'area': area}
         
         if best_contour is None:
+            logger.debug("No suitable contours found in color-based detection")
             return None
         
-        # Fit ellipse to the best contour (handles perspective distortion)
-        contour = best_contour['contour']
+        logger.debug(
+            f"Bull center detected via color mask: ({best_contour['center'][0]:.2f}, "
+            f"{best_contour['center'][1]:.2f}), area={best_contour['area']:.1f}px²"
+        )
         
-        if len(contour) < 5:
-            # Need at least 5 points to fit an ellipse
-            logger.debug("Insufficient points in bull contour for ellipse fitting")
-            return best_contour['center']
+        return best_contour['center']
+    
+    def _verify_bull_colors(self, hsv: np.ndarray, x: float, y: float, radius: int) -> bool:
+        """
+        Verify that a point is the bull by checking for BOTH red and green colors.
         
-        try:
-            ellipse = cv2.fitEllipse(contour)
-            # ellipse format: ((center_x, center_y), (width, height), angle)
-            center = ellipse[0]
-            
-            logger.debug(
-                f"Bull center detected via ellipse fitting: ({center[0]:.2f}, {center[1]:.2f}), "
-                f"axes=({ellipse[1][0]:.1f}, {ellipse[1][1]:.1f}), angle={ellipse[2]:.1f}°"
-            )
-            
-            return (float(center[0]), float(center[1]))
-            
-        except cv2.error as e:
-            logger.debug(f"Failed to fit ellipse to bull contour: {e}")
-            # Fall back to contour centroid
-            return best_contour['center']
+        Args:
+            hsv: HSV image
+            x, y: Center point to check
+            radius: Radius around point to sample
+        
+        Returns:
+            True if both red and green colors are present (indicating bull)
+        """
+        # Sample region around point
+        y1 = max(0, int(y) - radius)
+        y2 = min(hsv.shape[0], int(y) + radius)
+        x1 = max(0, int(x) - radius)
+        x2 = min(hsv.shape[1], int(x) + radius)
+        
+        if y2 <= y1 or x2 <= x1:
+            return False
+        
+        roi = hsv[y1:y2, x1:x2]
+        
+        # Check for red
+        red_mask1 = cv2.inRange(roi, np.array([0, 80, 80]), np.array([15, 255, 255]))
+        red_mask2 = cv2.inRange(roi, np.array([165, 80, 80]), np.array([180, 255, 255]))
+        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        red_pixels = np.sum(red_mask > 0)
+        
+        # Check for green
+        green_mask = cv2.inRange(roi, np.array([35, 80, 80]), np.array([85, 255, 255]))
+        green_pixels = np.sum(green_mask > 0)
+        
+        total_pixels = roi.shape[0] * roi.shape[1]
+        
+        # Bull must have BOTH red and green (at least 3% each)
+        red_ratio = red_pixels / total_pixels
+        green_ratio = green_pixels / total_pixels
+        
+        has_both = red_ratio > 0.03 and green_ratio > 0.03
+        
+        logger.debug(
+            f"Color verification at ({x:.1f}, {y:.1f}): "
+            f"red={red_ratio:.1%}, green={green_ratio:.1%}, valid={has_both}"
+        )
+        
+        return has_both
     
     def detect_ring_edges(
         self, 
