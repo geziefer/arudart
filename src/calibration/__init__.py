@@ -17,6 +17,7 @@ Main components:
 """
 
 from .board_geometry import BoardGeometry
+from .coordinate_mapper import CoordinateMapper
 from .feature_detector import FeatureDetector, FeatureDetectionResult, SectorBoundary, BoundaryIntersection
 from .feature_matcher import FeatureMatcher, PointPair
 from .homography_calculator import HomographyCalculator
@@ -24,6 +25,7 @@ from .manual_calibrator import ManualCalibrator
 
 __all__ = [
     'BoardGeometry',
+    'CoordinateMapper',
     'ManualCalibrator',
     'HomographyCalculator',
     'FeatureDetector',

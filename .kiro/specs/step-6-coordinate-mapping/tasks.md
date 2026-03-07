@@ -107,8 +107,8 @@ The system projects a complete spiderweb overlay through the computed homography
   - Test with all 3 cameras
   - Ask user if questions arise
 
-- [ ] 9. Implement CoordinateMapper class
-  - [ ] 9.1 Create `src/calibration/coordinate_mapper.py`
+- [-] 9. Implement CoordinateMapper class
+  - [x] 9.1 Create `src/calibration/coordinate_mapper.py`
     - Implement `__init__()` to load intrinsic and homography from JSON
     - Implement `map_to_board()` with undistortion and homography
     - Implement `map_to_image()` for inverse transformation
@@ -131,7 +131,7 @@ The system projects a complete spiderweb overlay through the computed homography
     - Concurrent calls from multiple threads should complete without corruption
     - **Validates: Requirements 4.8**
   
-  - [ ] 9.5 Write unit tests for CoordinateMapper
+  - [x] 9.5 Write unit tests for CoordinateMapper
     - Test loading valid calibration files
     - Test handling missing calibration files gracefully
     - Test coordinate system convention (origin, axes)
