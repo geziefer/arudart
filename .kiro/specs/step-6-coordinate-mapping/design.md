@@ -2,16 +2,27 @@
 
 ## Overview
 
-This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using color-based calibration. The system uses the dartboard's natural color patterns—bull center, ring edges, and sector color boundaries—as calibration reference points, eliminating the need for external ARUCO markers.
+This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using **manual control point calibration**. The system uses user-clicked points at known board positions to compute a homography matrix for each camera, similar to professional systems like Autodarts.
 
-Each of the 3 cameras has its own homography matrix computed from features visible in that camera's perspective. The bull center serves as a common anchor point (0, 0), while color-based sector boundaries (black/white transitions in singles, red/green in rings) provide additional correspondence points for robust homography computation. This approach is more reliable than wire detection, especially from angled camera perspectives.
+Each of the 3 cameras has its own homography matrix computed from 8-12 manually clicked control points. The system projects the complete dartboard geometry (spiderweb overlay) through the homography for visual validation. This approach is simple, accurate, and proven in commercial systems.
 
 **Key Design Principles**:
+- **Manual control points as primary calibration method** (accurate, simple, proven)
 - Per-camera calibration to handle perspective distortion
-- Focus on reliably detectable features (bull, near-sector wires)
-- Continuous calibration with lightweight validation between throws
-- Graceful degradation when features are not detected
+- Visual feedback via spiderweb overlay projection
+- Interactive refinement with point adjustment
+- Automatic feature detection as optional enhancement (future)
 - Thread-safe coordinate transformation for multi-camera operation
+
+**Design Rationale**:
+After analyzing commercial systems (Autodarts) and testing automatic feature detection, we determined that manual control point calibration is:
+1. **More accurate**: Human clicking ±2-3px vs automatic detection ±10-20px
+2. **More reliable**: Works from any camera angle, no detection failures
+3. **Faster to implement**: Simpler algorithm, fewer edge cases
+4. **Easier to validate**: Visual spiderweb overlay provides immediate feedback
+5. **Industry standard**: Used by professional camera calibration systems
+
+Automatic feature detection (FeatureDetector, FeatureMatcher) is preserved as an optional enhancement for convenience, but not required for core functionality.
 
 ## Architecture
 
@@ -19,9 +30,9 @@ Each of the 3 cameras has its own homography matrix computed from features visib
 
 ```
 calibration/
+├── calibrate_manual.py            # Manual control point calibration script (PRIMARY)
 ├── calibrate_intrinsic.py         # Intrinsic calibration script (chessboard)
-├── calibrate_spiderweb.py         # Spiderweb-based extrinsic calibration script
-├── verify_calibration.py          # Verification script with control points
+├── verify_calibration.py          # Verification script with test points
 ├── intrinsic_cam0.json            # Camera matrix & distortion (cam0)
 ├── intrinsic_cam1.json            # Camera matrix & distortion (cam1)
 ├── intrinsic_cam2.json            # Camera matrix & distortion (cam2)
@@ -33,10 +44,12 @@ src/calibration/
 ├── __init__.py
 ├── coordinate_mapper.py           # CoordinateMapper class (main interface)
 ├── intrinsic_calibrator.py        # IntrinsicCalibrator class (chessboard)
-├── feature_detector.py            # FeatureDetector class (spiderweb detection)
-├── feature_matcher.py             # FeatureMatcher class (feature-to-board mapping)
+├── board_geometry.py              # BoardGeometry class (dartboard dimensions & projection)
+├── manual_calibrator.py           # ManualCalibrator class (control point UI)
 ├── homography_calculator.py       # HomographyCalculator class
-└── calibration_manager.py         # CalibrationManager class (continuous calibration)
+├── calibration_manager.py         # CalibrationManager class (continuous calibration)
+├── feature_detector.py            # FeatureDetector class (OPTIONAL - automatic detection)
+└── feature_matcher.py             # FeatureMatcher class (OPTIONAL - automatic detection)
 ```
 
 ### Component Relationships
@@ -44,21 +57,21 @@ src/calibration/
 ```
 CalibrationManager (orchestrates calibration lifecycle)
 ├── manages state: ready, calibrating, error
-├── triggers full calibration on startup
+├── triggers manual calibration on startup
 ├── runs lightweight validation between throws
 └── triggers recalibration on drift detection
 
-FeatureDetector (detects board features in camera image)
-├── detects bull center using Hough circles
-├── detects ring edges using edge detection + ellipse fitting
-├── detects radial wires using Hough lines
-└── extracts wire-ring intersections
+ManualCalibrator (interactive control point selection)
+├── displays board image with control point labels
+├── captures user clicks at known board positions
+├── validates point placement
+└── returns list of (pixel, board) point pairs
 
-FeatureMatcher (maps detected features to board coordinates)
-├── assigns bull center to (0, 0)
-├── assigns ring edge points to known radii
-├── assigns wire intersections to known angles
-└── uses RANSAC to reject outliers
+BoardGeometry (dartboard dimensions and projection)
+├── stores Winmau Blade 6 dimensions
+├── computes board coordinates for any sector/ring
+├── projects board coordinates to pixels via homography
+└── generates spiderweb overlay for visualization
 
 HomographyCalculator (computes transformation matrix)
 ├── takes matched point pairs (pixel, board)
@@ -78,23 +91,25 @@ CoordinateMapper (transforms coordinates)
 ```
 Camera Frame (800×600 BGR)
     ↓
-[FeatureDetector.detect()]
+[User clicks control points in ManualCalibrator UI]
     ↓
-Detected Features:
-  - bull_center: (u, v) pixel
-  - ring_edges: list of (u, v) points on double/triple rings
-  - wire_intersections: list of (u, v, ring_type, sector_estimate)
-    ↓
-[FeatureMatcher.match()]
-    ↓
-Matched Point Pairs:
+Control Point Pairs:
   - [(pixel_1, board_1), (pixel_2, board_2), ...]
   - Each pair: ((u, v), (x_mm, y_mm))
+  - Example: (400, 300) → (0, 0) for bull center
+  - Example: (400, 100) → (0, 107) for T20
     ↓
 [HomographyCalculator.compute()]
     ↓
 Homography Matrix H (3×3)
     ↓ (saved to JSON)
+[BoardGeometry.project_spiderweb(H)]
+    ↓
+Spiderweb Overlay (visual validation)
+  - All 20 sector boundaries projected
+  - All ring edges projected
+  - User validates alignment
+    ↓
 [CoordinateMapper.map_to_board()]
     ↓
 1. Undistort pixel (u, v) using camera matrix K and distortion D

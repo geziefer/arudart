@@ -1,95 +1,126 @@
-# Calibration Directory
+# Manual Calibration Guide
 
-This directory stores calibration data for the ARU-DART coordinate mapping system.
+This guide explains how to run manual calibration for the ARU-DART coordinate mapping system.
 
-## File Structure
+## Prerequisites
 
-### Intrinsic Calibration Files
-- `intrinsic_cam0.json` - Camera matrix and distortion coefficients for cam0
-- `intrinsic_cam1.json` - Camera matrix and distortion coefficients for cam1
-- `intrinsic_cam2.json` - Camera matrix and distortion coefficients for cam2
+1. All 3 cameras connected and working
+2. Dartboard clearly visible in all camera views
+3. Good lighting (LED ring on)
+4. No darts in the board
 
-### Homography Files
-- `homography_cam0.json` - Homography matrix for cam0 (pixel to board coordinates)
-- `homography_cam1.json` - Homography matrix for cam1 (pixel to board coordinates)
-- `homography_cam2.json` - Homography matrix for cam2 (pixel to board coordinates)
+## Running Calibration
 
-## Calibration Workflow
+### Calibrate All Cameras
 
-1. **Intrinsic Calibration** (once per camera, unless camera moves):
-   ```bash
-   python calibration/calibrate_intrinsic.py --camera 0
-   ```
-   - Uses chessboard pattern (9×6 inner corners, 25mm squares)
-   - Captures 20-30 images at different angles
-   - Computes camera matrix and distortion coefficients
-   - Saves to `intrinsic_cam{N}.json`
-
-2. **Spiderweb Calibration** (extrinsic, per camera):
-   ```bash
-   python calibration/calibrate_spiderweb.py
-   ```
-   - Detects dartboard features (bull, rings, radial wires)
-   - Matches features to known board coordinates
-   - Computes homography matrix
-   - Saves to `homography_cam{N}.json`
-
-3. **Verification**:
-   ```bash
-   python calibration/verify_calibration.py
-   ```
-   - Interactive tool to click known points (T20, D20, bull)
-   - Displays transformed board coordinates
-   - Reports mapping error
-
-## File Formats
-
-### intrinsic_cam{N}.json
-```json
-{
-  "camera_id": 0,
-  "camera_matrix": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
-  "distortion_coeffs": [k1, k2, p1, p2, k3],
-  "reprojection_error": 0.42,
-  "image_size": [800, 600],
-  "calibration_date": "2024-01-15T10:30:00"
-}
+```bash
+python calibration/calibrate_manual.py
 ```
 
-### homography_cam{N}.json
-```json
-{
-  "camera_id": 0,
-  "homography": [[h11, h12, h13], [h21, h22, h23], [h31, h32, h33]],
-  "num_points": 12,
-  "num_inliers": 10,
-  "reprojection_error_mm": 3.2,
-  "features_detected": {
-    "bull_center": true,
-    "double_ring_points": 8,
-    "triple_ring_points": 6,
-    "wire_intersections": 5
-  },
-  "calibration_date": "2024-01-15T10:35:00"
-}
+This will calibrate all 3 cameras sequentially (cam0, cam1, cam2).
+
+### Calibrate Single Camera
+
+```bash
+python calibration/calibrate_manual.py --camera 0  # Calibrate cam0 only
+python calibration/calibrate_manual.py --camera 1  # Calibrate cam1 only
+python calibration/calibrate_manual.py --camera 2  # Calibrate cam2 only
 ```
 
-## Board Specifications (Winmau Blade 6)
+## Calibration Process
 
-Standard dartboard dimensions used for calibration:
-- **Double Bull radius**: 6.35mm
-- **Single Bull outer radius**: 15.9mm
-- **Triple ring inner radius**: 99mm
-- **Triple ring outer radius**: 107mm
-- **Double ring inner radius**: 162mm
-- **Double ring outer radius**: 170mm
-- **Sector width**: 18° each (360° / 20 sectors)
-- **Sector 20 position**: Top (12 o'clock, 0° in board coordinates)
+For each camera, you'll see an interactive window with the camera view.
 
-## Camera Positions
+### Control Points
 
-- **cam0**: Upper right (near sector 18, ~1 o'clock)
-- **cam1**: Lower right (near sector 17, ~5 o'clock)
-- **cam2**: Left (near sector 11, ~9 o'clock)
+You'll be prompted to click on 11 standard control points in order:
 
-Each camera has its own homography due to different viewing angles.
+1. **BULL** - Bull center (center of the board)
+2. **T20** - Triple 20 (top of board)
+3. **T5** - Triple 5 (left side)
+4. **T1** - Triple 1 (right side)
+5. **D20** - Double 20 (top outer ring)
+6. **D5** - Double 5 (left outer ring)
+7. **D1** - Double 1 (right outer ring)
+8. **S18** - Single 18 (upper right)
+9. **S4** - Single 4 (upper left)
+10. **S13** - Single 13 (lower left)
+11. **S6** - Single 6 (lower right)
+
+### Minimum Points
+
+You need at least 4 points for calibration, but more points improve accuracy. We recommend clicking all 11 points.
+
+### Interactive Controls
+
+- **Left Click** - Click on the prompted control point
+- **'d' key** - Delete the last clicked point (if you made a mistake)
+- **'s' key** - Toggle spiderweb overlay (shows projected dartboard geometry)
+- **'q' key** - Finish calibration (minimum 4 points required)
+
+### Visual Feedback
+
+- **Green points** - Good reprojection error (<10px)
+- **Red points** - Outliers (>10px error) - consider re-clicking these
+- **Yellow spiderweb** - Projected dartboard geometry (toggle with 's')
+- **Error stats** - Average and max reprojection errors shown at bottom
+
+### Tips for Accurate Calibration
+
+1. **Click precisely** - Try to click exactly on the wire intersections
+2. **Use spiderweb overlay** - Toggle with 's' to verify alignment
+3. **Check errors** - If you see red points (>10px error), delete and re-click them
+4. **Add more points** - More points = better accuracy
+5. **Target <5mm error** - Aim for average reprojection error under 5mm
+
+## Output Files
+
+Calibration creates JSON files in the `calibration/` directory:
+
+- `homography_cam0.json` - Homography matrix for cam0
+- `homography_cam1.json` - Homography matrix for cam1
+- `homography_cam2.json` - Homography matrix for cam2
+
+Each file contains:
+- Homography matrix (3x3)
+- Number of points used
+- Number of inliers (RANSAC)
+- Reprojection error in millimeters
+- Timestamp
+
+## Troubleshooting
+
+### Camera not found
+- Check USB connections
+- Verify cameras are detected: `ls /dev/video*` (Linux) or check System Preferences (macOS)
+
+### High reprojection error (>10mm)
+- Re-run calibration with more careful clicking
+- Ensure dartboard is clearly visible
+- Check lighting conditions
+- Make sure board is not moving
+
+### Spiderweb doesn't align
+- Delete outlier points (red) and re-click them
+- Add more control points for better coverage
+- Ensure you're clicking on the correct features
+
+### "Insufficient points" error
+- You need at least 4 points
+- Click more control points before pressing 'q'
+
+## Next Steps
+
+After calibration:
+
+1. Verify calibration accuracy using `calibration/verify_calibration.py` (coming soon)
+2. Integrate coordinate mapping into main.py
+3. Test with actual dart throws
+
+## Re-calibration
+
+You should re-calibrate if:
+- Cameras are moved or adjusted
+- Dartboard is moved
+- Lighting conditions change significantly
+- Coordinate mapping accuracy degrades over time
