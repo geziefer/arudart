@@ -7,11 +7,11 @@ the user to click on known control points to establish pixel-to-board
 coordinate correspondences.
 
 Usage:
+    # With live cameras
     python calibration/calibrate_manual.py [--camera CAMERA_ID]
 
-Options:
-    --camera CAMERA_ID    Calibrate only specified camera (0, 1, or 2)
-                         If not specified, calibrates all cameras sequentially
+    # With saved images (no cameras needed)
+    python calibration/calibrate_manual.py --from-image data/testimages/BS/BS10_cam0_pre.jpg --camera 0
 """
 
 import argparse
@@ -20,13 +20,16 @@ import sys
 from pathlib import Path
 
 import cv2
-import tomli
 
-# Add src to path
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.calibration import BoardGeometry, HomographyCalculator, ManualCalibrator
-from src.camera_manager import CameraManager
 
 # Setup logging
 logging.basicConfig(
@@ -39,23 +42,23 @@ logger = logging.getLogger(__name__)
 def load_config(config_path: str = "config.toml") -> dict:
     """Load configuration from TOML file."""
     with open(config_path, 'rb') as f:
-        config = tomli.load(f)
+        config = tomllib.load(f)
     return config
 
 
-def calibrate_camera(
+def calibrate_from_frame(
     camera_id: int,
-    camera_manager: CameraManager,
+    frame,
     board_geometry: BoardGeometry,
     homography_calculator: HomographyCalculator,
     output_dir: str = "calibration"
 ) -> bool:
     """
-    Run manual calibration for a single camera.
+    Run manual calibration for a single camera using a provided frame.
     
     Args:
         camera_id: Camera identifier (0, 1, 2)
-        camera_manager: CameraManager instance
+        frame: BGR image (numpy array)
         board_geometry: BoardGeometry instance
         homography_calculator: HomographyCalculator instance
         output_dir: Output directory for calibration files
@@ -64,18 +67,8 @@ def calibrate_camera(
         True if calibration successful, False otherwise
     """
     logger.info(f"=== Calibrating camera {camera_id} ===")
+    logger.info(f"Frame shape: {frame.shape}")
     
-    # Capture frame
-    logger.info("Capturing frame from camera...")
-    frame = camera_manager.get_latest_frame(camera_id)
-    
-    if frame is None:
-        logger.error(f"Failed to capture frame from camera {camera_id}")
-        return False
-    
-    logger.info(f"Frame captured: {frame.shape}")
-    
-    # Run manual calibration
     calibrator = ManualCalibrator(board_geometry)
     
     try:
@@ -105,7 +98,6 @@ def calibrate_camera(
         logger.info(f"Points: {metadata['num_points']}")
         logger.info(f"Inliers: {metadata['num_inliers']}")
         logger.info(f"Reprojection error: {metadata['reprojection_error_mm']:.2f}mm")
-        logger.info(f"Timestamp: {metadata['timestamp']}")
         
         return True
     
@@ -124,6 +116,11 @@ def main():
         type=int,
         choices=[0, 1, 2],
         help='Calibrate only specified camera (0, 1, or 2)'
+    )
+    parser.add_argument(
+        '--from-image',
+        type=str,
+        help='Calibrate from saved image file instead of live camera'
     )
     parser.add_argument(
         '--config',
@@ -146,31 +143,77 @@ def main():
     
     # Initialize components
     board_geometry = BoardGeometry()
-    
-    # Get calibration config (with defaults)
     calibration_config = config.get('calibration', {})
     homography_config = calibration_config.get('homography', {})
     homography_calculator = HomographyCalculator(homography_config)
     
-    # Initialize camera manager
+    # Mode: from image file
+    if args.from_image:
+        camera_id = args.camera if args.camera is not None else 0
+        
+        image_path = Path(args.from_image)
+        if not image_path.exists():
+            logger.error(f"Image file not found: {image_path}")
+            sys.exit(1)
+        
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            logger.error(f"Failed to load image: {image_path}")
+            sys.exit(1)
+        
+        logger.info(f"Loaded image: {image_path}")
+        success = calibrate_from_frame(
+            camera_id, frame, board_geometry, homography_calculator, args.output
+        )
+        
+        cv2.destroyAllWindows()
+        sys.exit(0 if success else 1)
+    
+    # Mode: live cameras
+    from src.camera.camera_manager import CameraManager
+    import time
+    
     logger.info("Initializing cameras...")
     camera_manager = CameraManager(config)
+    camera_manager.start_all()
+    
+    # Wait for cameras to capture first frames
+    time.sleep(1.0)
     
     # Determine which cameras to calibrate
+    all_camera_ids = sorted(camera_manager.get_camera_ids())
+    
+    if not all_camera_ids:
+        logger.error("No cameras detected - check connections")
+        camera_manager.stop_all()
+        sys.exit(1)
+    
+    logger.info(f"Detected {len(all_camera_ids)} cameras: {all_camera_ids}")
+    
     if args.camera is not None:
-        camera_ids = [args.camera]
+        if args.camera < len(all_camera_ids):
+            camera_ids = [all_camera_ids[args.camera]]
+            logger.info(f"Calibrating camera {args.camera} (device {camera_ids[0]})")
+        else:
+            logger.error(f"Camera {args.camera} not available (only {len(all_camera_ids)} detected)")
+            camera_manager.stop_all()
+            sys.exit(1)
     else:
-        camera_ids = [0, 1, 2]
+        camera_ids = all_camera_ids
     
     # Calibrate each camera
     results = {}
     for camera_id in camera_ids:
-        success = calibrate_camera(
-            camera_id,
-            camera_manager,
-            board_geometry,
-            homography_calculator,
-            args.output
+        logger.info(f"Capturing frame from camera {camera_id}...")
+        frame = camera_manager.get_latest_frame(camera_id)
+        
+        if frame is None:
+            logger.error(f"Failed to capture frame from camera {camera_id}")
+            results[camera_id] = False
+            continue
+        
+        success = calibrate_from_frame(
+            camera_id, frame, board_geometry, homography_calculator, args.output
         )
         results[camera_id] = success
         
@@ -184,7 +227,7 @@ def main():
             cv2.destroyAllWindows()
     
     # Cleanup
-    camera_manager.release_all()
+    camera_manager.stop_all()
     cv2.destroyAllWindows()
     
     # Print final summary
@@ -193,13 +236,12 @@ def main():
         status = "SUCCESS" if success else "FAILED"
         logger.info(f"Camera {camera_id}: {status}")
     
-    # Exit with appropriate code
-    if all(results.values()):
+    all_success = all(results.values())
+    if all_success:
         logger.info("All calibrations successful!")
-        sys.exit(0)
     else:
         logger.error("Some calibrations failed")
-        sys.exit(1)
+    sys.exit(0 if all_success else 1)
 
 
 if __name__ == "__main__":
