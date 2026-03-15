@@ -50,13 +50,13 @@ class TestManualCalibrator:
         assert "iT 20/1" in labels
         assert "iT 5/20" in labels
         assert "iT 8/11" in labels
-        assert "iT 16/8" in labels
+        assert "iT 11/14" in labels
         assert "iT 6/13" in labels
         assert "iT 10/6" in labels
         assert "oD 20/1" in labels
         assert "oD 5/20" in labels
         assert "oD 8/11" in labels
-        assert "oD 16/8" in labels
+        assert "oD 11/14" in labels
         assert "oD 6/13" in labels
         assert "oD 10/6" in labels
 

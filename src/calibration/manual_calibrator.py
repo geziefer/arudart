@@ -72,6 +72,7 @@ class ManualCalibrator:
         self.clicked_points = {}
         self.current_point_index = 0
         self.aborted = False
+        self._points_changed = False
         
         # Create window and set mouse callback
         cv2.namedWindow(self.window_name)
@@ -79,12 +80,13 @@ class ManualCalibrator:
         
         logger.info("Starting interactive calibration")
         logger.info("Click on each wire intersection as prompted")
-        logger.info("Keys: 'd'=delete last, 's'=spiderweb, 'q'=finish, ESC=abort")
+        logger.info("Keys: 'd'=delete last, 'q'=finish, ESC=abort")
         
         while True:
-            # Update homography if we have enough points
-            if len(self.clicked_points) >= 4:
+            # Update homography only when points change
+            if len(self.clicked_points) >= 4 and self._points_changed:
                 self._compute_preliminary_homography()
+                self._points_changed = False
             
             # Draw current state
             display_image = self._draw_ui()
@@ -115,11 +117,8 @@ class ManualCalibrator:
                     del self.clicked_points[last_label]
                     self.current_point_index = max(0, self.current_point_index - 1)
                     self.homography = None
+                    self._points_changed = True
                     logger.info(f"Deleted point {last_label}")
-            
-            elif key == ord('s'):
-                self.show_spiderweb = not self.show_spiderweb
-                logger.info(f"Spiderweb overlay: {'ON' if self.show_spiderweb else 'OFF'}")
         
         cv2.destroyWindow(self.window_name)
         
@@ -148,6 +147,7 @@ class ManualCalibrator:
                 self.clicked_points[label] = (float(x), float(y))
                 logger.info(f"Clicked {label} at ({x}, {y})")
                 self.current_point_index += 1
+                self._points_changed = True
 
     def _compute_preliminary_homography(self):
         """Compute preliminary homography from current clicked points."""
@@ -251,6 +251,48 @@ class ManualCalibrator:
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2
         )
 
+
+    def generate_spiderweb_overlay(self, image: np.ndarray, homography: np.ndarray) -> np.ndarray:
+        """
+        Generate an image with spiderweb overlay and clicked control points.
+
+        Used after calibration is complete to show the result for review.
+
+        Args:
+            image: Original camera image (BGR)
+            homography: 3x3 homography matrix (image->board)
+
+        Returns:
+            Image with spiderweb and control points drawn
+        """
+        spiderweb = self.board_geometry.generate_spiderweb(homography)
+        overlay = self.board_geometry.draw_spiderweb(
+            image.copy(), spiderweb, color=(0, 255, 255), thickness=1
+        )
+
+        # Draw clicked control points
+        for label, (u, v) in self.clicked_points.items():
+            error = self.reprojection_errors.get(label, 0.0)
+            color = (0, 0, 255) if error > 10.0 else (0, 255, 0)
+            cv2.circle(overlay, (int(u), int(v)), 5, color, -1)
+            label_text = f"{label} ({error:.1f}px)" if error > 0 else label
+            cv2.putText(
+                overlay, label_text, (int(u) + 10, int(v) - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1
+            )
+
+        # Add summary text
+        if self.reprojection_errors:
+            errors = list(self.reprojection_errors.values())
+            summary = f"Points: {len(self.clicked_points)} | Avg err: {np.mean(errors):.1f}px | Max: {np.max(errors):.1f}px"
+            cv2.putText(
+                overlay, summary, (10, overlay.shape[0] - 15),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
+            )
+
+        return overlay
+
+
     def _draw_ui(self) -> np.ndarray:
         """
         Draw UI overlay showing control points, instructions, and zoom.
@@ -259,13 +301,6 @@ class ManualCalibrator:
             Image with UI overlay
         """
         display = self.current_image.copy()
-        
-        # Draw spiderweb overlay if enabled and homography available
-        if self.show_spiderweb and self.homography is not None:
-            spiderweb = self.board_geometry.generate_spiderweb(self.homography)
-            display = self.board_geometry.draw_spiderweb(
-                display, spiderweb, color=(0, 255, 255), thickness=1
-            )
         
         # Draw crosshair at mouse position
         cv2.line(display, (self.mouse_x - 20, self.mouse_y),
@@ -309,7 +344,7 @@ class ManualCalibrator:
         # Draw instructions
         instructions = [
             f"Points: {len(self.clicked_points)}/{len(self.control_points)} (min 4)",
-            "'d'=delete last  's'=spiderweb  'q'=finish  ESC=abort",
+            "'d'=delete last  'q'=finish  ESC=abort",
         ]
         if self.reprojection_errors:
             errors = list(self.reprojection_errors.values())

@@ -69,7 +69,7 @@ class BoardGeometry:
         ("iT 10/6", (10, 6), "triple_inner", "iT 10/6 - inner triple at 10/6 boundary"),
         # West
         ("iT 8/11", (8, 11), "triple_inner", "iT 8/11 - inner triple at 8/11 boundary"),
-        ("iT 16/8", (16, 8), "triple_inner", "iT 16/8 - inner triple at 16/8 boundary"),
+        ("iT 11/14", (11, 14), "triple_inner", "iT 11/14 - inner triple at 11/14 boundary"),
         # North
         ("oD 20/1", (20, 1), "double_outer", "oD 20/1 - outer double at 20/1 boundary"),
         ("oD 5/20", (5, 20), "double_outer", "oD 5/20 - outer double at 5/20 boundary"),
@@ -81,7 +81,7 @@ class BoardGeometry:
         ("oD 10/6", (10, 6), "double_outer", "oD 10/6 - outer double at 10/6 boundary"),
         # West
         ("oD 8/11", (8, 11), "double_outer", "oD 8/11 - outer double at 8/11 boundary"),
-        ("oD 16/8", (16, 8), "double_outer", "oD 16/8 - outer double at 16/8 boundary"),
+        ("oD 11/14", (11, 14), "double_outer", "oD 11/14 - outer double at 11/14 boundary"),
     ]
     
     # Map ring radius keys to actual radii for wire intersections.
@@ -315,16 +315,19 @@ class BoardGeometry:
             'rings': {}
         }
         
-        # Generate sector boundaries (20 radial lines from bull to outer edge)
-        for sector in self.SECTOR_ORDER:
-            angle_rad = self.get_sector_angle(sector)
+        # Generate sector boundaries (20 radial lines at wire positions)
+        # Each boundary is between two adjacent sectors.
+        for i in range(len(self.SECTOR_ORDER)):
+            sector_a = self.SECTOR_ORDER[i]
+            sector_b = self.SECTOR_ORDER[(i + 1) % 20]
+            angle_rad = self.get_sector_boundary_angle(sector_a, sector_b)
+            if angle_rad is None:
+                continue
             
-            # Line from bull center to outer edge
-            # Start at bull center
+            # Line from bull center to outer edge along the boundary wire
             start_board = (0.0, 0.0)
             start_pixel = self.project_point(start_board, H_board_to_image)
             
-            # End at board outer edge
             end_x = self.BOARD_RADIUS * np.cos(angle_rad)
             end_y = self.BOARD_RADIUS * np.sin(angle_rad)
             end_board = (float(end_x), float(end_y))

@@ -96,6 +96,18 @@ def calibrate_from_frame(
         # Save homography
         homography_calculator.save(camera_id, homography, metadata, output_dir)
         
+        # Generate and save spiderweb overlay image
+        overlay = calibrator.generate_spiderweb_overlay(frame, homography)
+        overlay_path = Path(output_dir) / f"cam{camera_id}_spiderweb.jpg"
+        cv2.imwrite(str(overlay_path), overlay)
+        logger.info(f"Saved spiderweb overlay: {overlay_path}")
+        
+        # Show spiderweb overlay for review
+        window_name = f"Camera {camera_id} - Spiderweb (press any key)"
+        cv2.imshow(window_name, overlay)
+        cv2.waitKey(0)
+        cv2.destroyWindow(window_name)
+        
         # Display summary
         logger.info("=== Calibration Summary ===")
         logger.info(f"Camera: {camera_id}")
@@ -233,12 +245,6 @@ def main():
         
         if not success:
             logger.warning(f"Calibration failed for camera {camera_id}")
-        
-        # Pause between cameras
-        if camera_id != camera_ids[-1]:
-            logger.info("Press any key to continue to next camera...")
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
     
     # Cleanup
     camera_manager.stop_all()

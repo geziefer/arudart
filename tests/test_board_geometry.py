@@ -83,7 +83,7 @@ class TestBoardGeometry:
         assert angle is not None
         
         # Boundary between sector 16 and sector 8 (west side)
-        angle = self.geometry.get_sector_boundary_angle(16, 8)
+        angle = self.geometry.get_sector_boundary_angle(11, 14)
         assert angle is not None
         
         # Boundary between sector 6 and sector 13 (east side)
