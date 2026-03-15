@@ -225,3 +225,31 @@ python main.py --dev-mode --record-mode
 - cam0: 12 boundaries detected ✅
 - cam1: 9 boundaries detected ✅
 - cam2: 8 boundaries detected ✅ (was 0 before fix)
+
+### Manual Calibration Verification Results
+
+Verification script tested 13 known board points per camera (bull, T20, T1, T5, D20, D1, D5, BS20, BS1, BS5, SS20, SS1, SS5).
+
+**Results**:
+- cam0: avg 2.61mm error, max 6.47mm — PASS
+- cam1: avg 2.66mm error, max 6.51mm — PASS
+- cam2: avg 4.49mm error, max 9.02mm — PASS
+- All cameras under 5mm average error target
+- Zero failures across all 39 measurements (13 per camera)
+
+### main.py Integration Summary
+
+**CLI flags added**:
+- `--calibrate`: Run manual calibration before main loop
+- `--calibrate-intrinsic`: Run intrinsic (chessboard) calibration
+- `--verify-calibration`: Run verification script
+
+**Keyboard shortcuts in dev mode**:
+- `c`: Trigger manual calibration, reload coordinate mapper
+- `v`: Toggle spiderweb overlay (projected board grid on camera view)
+
+**Runtime behavior**:
+- CoordinateMapper initializes after camera setup, loads existing calibration JSONs
+- After each dart detection, pixel coords are transformed to board coords and logged
+- Scoring skipped when CalibrationManager state is "calibrating"
+- Spiderweb overlay cached per camera, invalidated on recalibration

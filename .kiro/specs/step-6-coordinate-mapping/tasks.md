@@ -259,7 +259,7 @@ The system projects a complete spiderweb overlay through the computed homography
     - Add toggle with 'v' key in dev mode
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.9_
 
-- [ ] 17. Final checkpoint - End-to-end testing
+- [x] 17. Final checkpoint - End-to-end testing
   - Run full calibration workflow (intrinsic + manual)
   - Verify coordinate transformation in main.py
   - Test with actual dart throws
