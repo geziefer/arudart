@@ -1,0 +1,223 @@
+{
+  "camera_id": 1,
+  "timestamp": "2026-03-15T18:12:52.025793",
+  "summary": {
+    "avg_error_mm": 2.66,
+    "max_error_mm": 6.51,
+    "min_error_mm": 0.55,
+    "num_measured": 13,
+    "num_failed": 0,
+    "num_skipped": 0
+  },
+  "skipped_points": [],
+  "per_point": [
+    {
+      "label": "Bull",
+      "pixel": [
+        370,
+        301
+      ],
+      "error_mm": 0.55,
+      "expected_mm": [
+        0.0,
+        0.0
+      ],
+      "measured_mm": [
+        -0.2,
+        0.52
+      ]
+    },
+    {
+      "label": "T20 center",
+      "pixel": [
+        429,
+        239
+      ],
+      "error_mm": 2.03,
+      "expected_mm": [
+        6.306931015608869e-15,
+        103.0
+      ],
+      "measured_mm": [
+        1.58,
+        104.29
+      ]
+    },
+    {
+      "label": "T1 center",
+      "pixel": [
+        465,
+        254
+      ],
+      "error_mm": 2.9,
+      "expected_mm": [
+        31.82875042061959,
+        97.95882117840081
+      ],
+      "measured_mm": [
+        34.63,
+        97.24
+      ]
+    },
+    {
+      "label": "T5 center",
+      "pixel": [
+        388,
+        232
+      ],
+      "error_mm": 1.09,
+      "expected_mm": [
+        -31.828750420619578,
+        97.95882117840083
+      ],
+      "measured_mm": [
+        -31.57,
+        96.9
+      ]
+    },
+    {
+      "label": "T19 center",
+      "pixel": [
+        246,
+        366
+      ],
+      "error_mm": 3.63,
+      "expected_mm": [
+        -31.8287504206196,
+        -97.95882117840081
+      ],
+      "measured_mm": [
+        -33.48,
+        -101.19
+      ]
+    },
+    {
+      "label": "T6 center",
+      "pixel": [
+        514,
+        349
+      ],
+      "error_mm": 1.6,
+      "expected_mm": [
+        103.0,
+        0.0
+      ],
+      "measured_mm": [
+        101.64,
+        0.85
+      ]
+    },
+    {
+      "label": "T11 center",
+      "pixel": [
+        248,
+        260
+      ],
+      "error_mm": 0.95,
+      "expected_mm": [
+        -103.0,
+        1.2613862031217738e-14
+      ],
+      "measured_mm": [
+        -102.33,
+        -0.67
+      ]
+    },
+    {
+      "label": "D20 center",
+      "pixel": [
+        455,
+        210
+      ],
+      "error_mm": 2.71,
+      "expected_mm": [
+        1.0164568432923031e-14,
+        166.0
+      ],
+      "measured_mm": [
+        1.43,
+        163.7
+      ]
+    },
+    {
+      "label": "D1 center",
+      "pixel": [
+        512,
+        230
+      ],
+      "error_mm": 4.66,
+      "expected_mm": [
+        51.29682106624128,
+        157.87538170499548
+      ],
+      "measured_mm": [
+        54.57,
+        154.55
+      ]
+    },
+    {
+      "label": "D5 center",
+      "pixel": [
+        398,
+        198
+      ],
+      "error_mm": 0.84,
+      "expected_mm": [
+        -51.29682106624126,
+        157.8753817049955
+      ],
+      "measured_mm": [
+        -50.48,
+        158.09
+      ]
+    },
+    {
+      "label": "D19 center",
+      "pixel": [
+        148,
+        419
+      ],
+      "error_mm": 6.51,
+      "expected_mm": [
+        -51.29682106624129,
+        -157.87538170499548
+      ],
+      "measured_mm": [
+        -52.72,
+        -164.23
+      ]
+    },
+    {
+      "label": "D6 center",
+      "pixel": [
+        615,
+        385
+      ],
+      "error_mm": 4.34,
+      "expected_mm": [
+        166.0,
+        0.0
+      ],
+      "measured_mm": [
+        162.08,
+        -1.85
+      ]
+    },
+    {
+      "label": "D11 center",
+      "pixel": [
+        178,
+        237
+      ],
+      "error_mm": 2.77,
+      "expected_mm": [
+        -166.0,
+        2.0329136865846063e-14
+      ],
+      "measured_mm": [
+        -166.9,
+        -2.61
+      ]
+    }
+  ]
+}

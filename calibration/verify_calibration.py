@@ -196,26 +196,36 @@ class VerificationUI:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 200), 1,
                 )
 
-        # Instructions bar at top
-        h, w = display.shape[:2]
-        cv2.rectangle(display, (0, 0), (w, 50), (40, 40, 40), -1)
+        # Draw prompt for current point (same style as manual calibrator)
+        prompt = f"Click: {label}  ({self.current_index + 1}/{len(VERIFICATION_POINTS)})"
         cv2.putText(
-            display,
-            f"Click: {label}  ({self.current_index + 1}/{len(VERIFICATION_POINTS)})"
-            f"  |  SPACE=skip  s=spiderweb  q/ESC=finish",
-            (10, 32),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1,
+            display, prompt, (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2,
         )
 
-        # Expected coords info
+        # Draw instructions and stats
+        instructions = [
+            "SPACE=skip  s=spiderweb  q/ESC=finish",
+        ]
         if expected is not None:
             ex, ey = expected
+            instructions.append(f"Expected: ({ex:.1f}, {ey:.1f}) mm")
+        if self.results:
+            errors = [r["error_mm"] for r in self.results if r["error_mm"] is not None]
+            if errors:
+                instructions.append(
+                    f"Avg: {sum(errors)/len(errors):.1f}mm  "
+                    f"Max: {max(errors):.1f}mm  "
+                    f"Done: {len(self.results)}"
+                )
+
+        y_offset = 55
+        for line in instructions:
             cv2.putText(
-                display,
-                f"Expected board coords: ({ex:.1f}, {ey:.1f}) mm",
-                (10, h - 15),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1,
+                display, line, (10, y_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
             )
+            y_offset += 22
 
         return display
 
@@ -365,7 +375,7 @@ def main():
         logger.info("Initializing cameras...")
         camera_manager = CameraManager(config)
         camera_manager.start_all()
-        time.sleep(1.0)
+        time.sleep(2.0)
 
         all_ids = sorted(camera_manager.get_camera_ids())
         if args.camera >= len(all_ids):
@@ -377,7 +387,16 @@ def main():
             sys.exit(1)
 
         device_id = all_ids[args.camera]
-        frame = camera_manager.get_latest_frame(device_id)
+        
+        # Retry frame capture (camera may need extra time)
+        frame = None
+        for attempt in range(5):
+            frame = camera_manager.get_latest_frame(device_id)
+            if frame is not None:
+                break
+            logger.info(f"Waiting for camera {args.camera} (attempt {attempt + 1}/5)...")
+            time.sleep(0.5)
+        
         camera_manager.stop_all()
 
         if frame is None:
