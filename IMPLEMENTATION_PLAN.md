@@ -780,73 +780,31 @@ python tools/run_regression_tests.py  # Compare
 ---
 
 ### ⬜ Step 6: Coordinate Mapping (Image → Board Plane)
-**Status**: NOT STARTED  
-**Goal**: Map camera pixel coordinates to board coordinate system
+**Status**: IN PROGRESS  
+**Goal**: Map camera pixel coordinates to board coordinate system using manual control point calibration
 
-#### Tasks:
-- [ ] **Intrinsic Calibration** (one-time per camera):
-  - [ ] Create `calibration/calibrate_intrinsics.py` script
-  - [ ] Print chessboard pattern (e.g., 9×6 squares, 25mm each)
-  - [ ] Capture 20-30 images per camera at different angles
-  - [ ] Use `cv2.calibrateCamera` to compute:
-    - [ ] Camera matrix
-    - [ ] Distortion coefficients
-  - [ ] Save to `calibration/intrinsic_cam{0,1,2}.json`
-  - [ ] Run calibration for all 3 cameras
-- [ ] **ARUCO Marker Setup**:
-  - [ ] Generate 4-6 ARUCO markers (4×4 or 5×5 bits, dictionary DICT_4X4_50)
-  - [ ] Print markers on A4 paper
-  - [ ] Mount at known positions around board:
-    - [ ] Suggested: 12, 3, 6, 9 o'clock positions
-    - [ ] Measure exact positions in mm from board center
-  - [ ] Document marker IDs and positions in config
-- [ ] Add calibration config to `config.toml`:
-  - [ ] Paths to intrinsic files
-  - [ ] Board radius (170mm for standard board)
-  - [ ] Ring radii (bull, single bull, triple, double)
-  - [ ] ARUCO marker positions and IDs
-- [ ] Implement `calibration/markers.py`:
-  - [ ] ARUCO marker detection
-  - [ ] Extract marker corners
-- [ ] Implement `calibration/extrinsic.py`:
-  - [ ] Load intrinsic parameters
-  - [ ] Detect ARUCO markers in frame
-  - [ ] Compute homography from image to board plane
-  - [ ] Save homography per camera
-- [ ] Implement `processing/coordinate_mapping.py`:
-  - [ ] `CoordinateMapper` class
-  - [ ] Load homography per camera
-  - [ ] `map_to_board(camera_id, u, v)` → (x, y) in mm
-  - [ ] Undistort points using intrinsics
-- [ ] Add calibration step to `main.py`:
-  - [ ] Run extrinsic calibration at startup
-  - [ ] Or load pre-computed homographies
-- [ ] Create calibration verification script:
-  - [ ] Manually mark known points (T20, D20, bull)
-  - [ ] Map to board coordinates
-  - [ ] Compute mapping error
+#### Completed:
+- [x] Manual calibration UI with 17 wire-wire intersection control points
+- [x] BoardGeometry class with Winmau Blade 6 dimensions
+- [x] ManualCalibrator with zoom overlay, abort, auto-spiderweb display
+- [x] HomographyCalculator with RANSAC and JSON persistence
+- [x] CoordinateMapper with thread-safe coordinate transformation
+- [x] Spiderweb overlay generation along sector boundaries
+- [x] Calibration script (calibrate_manual.py) with live camera and image modes
+- [x] Unit tests for BoardGeometry, ManualCalibrator, CoordinateMapper
 
-#### Verification:
-- [ ] Intrinsic calibration: reprojection error <0.5 pixels
-- [ ] ARUCO markers detected reliably in all cameras
-- [ ] Homography computed successfully
-- [ ] Known points (T20, bull, etc.) map to correct coordinates
-- [ ] Mapping error <5mm for control points
-
-#### Success Criteria:
-- All 3 cameras calibrated (intrinsic + extrinsic)
-- Homography mapping gives reasonable board coordinates
-- Control points validate accuracy
+#### Remaining:
+- [ ] Property tests (serialization round-trip, reprojection error, thread safety)
+- [ ] CalibrationManager class (state machine, drift detection)
+- [ ] Intrinsic calibration script (chessboard)
+- [ ] Verification script
+- [ ] main.py integration
 
 #### Notes:
-- Intrinsic calibration is one-time unless cameras moved
-- Extrinsic calibration can run at each startup (fast with ARUCO)
-- Board coordinate system: center (0,0), +X right, +Y up
-
-**ARUCO Marker Instructions** (to be provided to user):
-- Print 4 markers from DICT_4X4_50 (IDs: 0, 1, 2, 3)
-- Each marker ~40mm square
-- Mount at: 12 o'clock (top), 3 o'clock (right), 6 o'clock (bottom), 9 o'clock (left)
+- Manual control point calibration is PRIMARY method (not ARUCO markers)
+- 17 control points: bull + 8 sector boundaries x 2 rings (iT + oD)
+- Calibration JSON files committed to git, persist across sessions
+- Spiderweb auto-displayed after each camera, image saved for referencep), 3 o'clock (right), 6 o'clock (bottom), 9 o'clock (left)
 - Distance from board center: ~200mm (outside double ring)
 - Measure exact positions and record in config
 

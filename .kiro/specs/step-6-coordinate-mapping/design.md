@@ -2,9 +2,9 @@
 
 ## Overview
 
-This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using **manual control point calibration**. The system uses user-clicked points at known board positions to compute a homography matrix for each camera, similar to professional systems like Autodarts.
+This design document specifies the architecture for transforming camera pixel coordinates to board-plane coordinates in millimeters using **manual control point calibration**. The system uses user-clicked points at 17 known wire-wire intersection positions to compute a homography matrix for each camera, similar to professional systems like Autodarts.
 
-Each of the 3 cameras has its own homography matrix computed from 8-12 manually clicked control points. The system projects the complete dartboard geometry (spiderweb overlay) through the homography for visual validation. This approach is simple, accurate, and proven in commercial systems.
+Each of the 3 cameras has its own homography matrix computed from 17 manually clicked control points (bull center + 8 sector boundaries x 2 rings). The system projects the complete dartboard geometry (spiderweb overlay) through the homography for visual validation. After finishing each camera, the spiderweb overlay is automatically displayed for review and saved as a reference image.
 
 **Key Design Principles**:
 - **Manual control points as primary calibration method** (accurate, simple, proven)
@@ -62,16 +62,22 @@ CalibrationManager (orchestrates calibration lifecycle)
 └── triggers recalibration on drift detection
 
 ManualCalibrator (interactive control point selection)
-├── displays board image with control point labels
-├── captures user clicks at known board positions
-├── validates point placement
+├── displays board image with control point labels and zoom overlay
+├── captures user clicks at 17 known wire-wire intersections
+├── validates point placement with preliminary homography
+├── supports abort (ESC) to exit entire application
+├── recomputes homography only when points change (_points_changed flag)
+├── auto-displays spiderweb overlay after calibration for review
+├── generates spiderweb overlay image with error stats for saving
 └── returns list of (pixel, board) point pairs
 
 BoardGeometry (dartboard dimensions and projection)
 ├── stores Winmau Blade 6 dimensions
-├── computes board coordinates for any sector/ring
+├── defines 17 control points: bull + 8 sector boundaries x 2 rings (iT + oD)
+├── computes board coordinates for any sector/ring combination
+├── computes sector boundary angles between adjacent sectors
 ├── projects board coordinates to pixels via homography
-└── generates spiderweb overlay for visualization
+└── generates spiderweb overlay with sector boundary lines (not sector centers)
 
 HomographyCalculator (computes transformation matrix)
 ├── takes matched point pairs (pixel, board)
@@ -89,32 +95,28 @@ CoordinateMapper (transforms coordinates)
 ### Data Flow
 
 ```
-Camera Frame (800×600 BGR)
-    ↓
-[User clicks control points in ManualCalibrator UI]
-    ↓
-Control Point Pairs:
-  - [(pixel_1, board_1), (pixel_2, board_2), ...]
-  - Each pair: ((u, v), (x_mm, y_mm))
-  - Example: (400, 300) → (0, 0) for bull center
-  - Example: (400, 100) → (0, 107) for T20
-    ↓
+Camera Frame (800x600 BGR)
+    |
+[User clicks 17 wire-wire intersection control points in ManualCalibrator UI]
+  - Zoom overlay for precision clicking
+  - Abort via ESC exits entire application
+  - Preliminary homography recomputed only when points change
+    |
+Control Point Pairs (17 total):
+  - Bull center: (pixel) -> (0, 0)
+  - 8 inner triple ring intersections at sector boundaries
+  - 8 outer double ring intersections at sector boundaries
+  - Symmetric layout: 2 boundaries per cardinal direction (N/S/E/W)
+  - North: 20/1, 5/20 | South: 19/3, 17/3 | East: 6/13, 10/6 | West: 8/11, 11/14
+    |
 [HomographyCalculator.compute()]
-    ↓
-Homography Matrix H (3×3)
-    ↓ (saved to JSON)
-[BoardGeometry.project_spiderweb(H)]
-    ↓
-Spiderweb Overlay (visual validation)
-  - All 20 sector boundaries projected
-  - All ring edges projected
-  - User validates alignment
-    ↓
+    |
+Homography Matrix H (3x3)
+    | (saved to JSON, committed to git)
+[Auto-display spiderweb overlay for review, save image]
+    |
 [CoordinateMapper.map_to_board()]
-    ↓
-1. Undistort pixel (u, v) using camera matrix K and distortion D
-2. Apply homography H to get board coordinates (x, y)
-    ↓
+    |
 Board Coordinates (x, y) in millimeters
 ```
 

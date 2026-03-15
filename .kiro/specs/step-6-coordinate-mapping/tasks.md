@@ -2,9 +2,9 @@
 
 ## Overview
 
-This implementation plan implements manual control point calibration for coordinate mapping. The user clicks 8-12 known points on the dartboard (bull, T20, D20, etc.), and the system computes a homography matrix that transforms camera pixels to board coordinates. This approach is simple, accurate, and proven in commercial systems like Autodarts.
+This implementation plan implements manual control point calibration for coordinate mapping. The user clicks 17 wire-wire intersection control points on the dartboard (bull + 8 sector boundaries x 2 rings), and the system computes a homography matrix that transforms camera pixels to board coordinates. This approach is simple, accurate, and proven in commercial systems like Autodarts.
 
-The system projects a complete spiderweb overlay through the computed homography for visual validation, allowing iterative refinement until the overlay perfectly matches the board.
+The system projects a complete spiderweb overlay through the computed homography for visual validation. After finishing each camera, the spiderweb is automatically displayed for review and saved as a reference image.
 
 ## Tasks
 
@@ -74,14 +74,14 @@ The system projects a complete spiderweb overlay through the computed homography
     - Test UI state management
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-- [ ] 6. Checkpoint - Manual calibration UI works
+- [x] 6. Checkpoint - Manual calibration UI works
   - Test interactive point clicking
   - Verify spiderweb overlay projection
   - Validate point refinement workflow
   - Measure calibration time (should be < 5 minutes per camera)
   - Ask user if questions arise
 
-- [-] 7. Implement HomographyCalculator class
+- [x] 7. Implement HomographyCalculator class
   - [x] 7.1 Create `src/calibration/homography_calculator.py`
     - Implement `__init__()` with RANSAC configuration
     - Implement `compute()` using cv2.findHomography with RANSAC
@@ -89,17 +89,17 @@ The system projects a complete spiderweb overlay through the computed homography
     - Implement `save()` and `load()` for JSON persistence
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ] 7.2 Write property test for serialization round-trip
+  - [x] 7.2 Write property test for serialization round-trip
     - **Property 4: Calibration Serialization Round-Trip**
     - Save homography to JSON, load back, verify numerical equivalence
     - **Validates: Requirements 3.5, 7.4**
   
-  - [ ] 7.3 Write property test for reprojection error threshold
+  - [x] 7.3 Write property test for reprojection error threshold
     - **Property 9: Reprojection Error Thresholds Met**
     - Verify computed homography has reprojection error < 5mm
     - **Validates: Requirements 3.3**
 
-- [ ] 8. Checkpoint - Verify homography computation works
+- [x] 8. Checkpoint - Verify homography computation works
   - Run full pipeline: click points → compute homography → project spiderweb
   - Verify homography is non-degenerate
   - Verify reprojection error < 5mm
@@ -107,7 +107,7 @@ The system projects a complete spiderweb overlay through the computed homography
   - Test with all 3 cameras
   - Ask user if questions arise
 
-- [-] 9. Implement CoordinateMapper class
+- [x] 9. Implement CoordinateMapper class
   - [x] 9.1 Create `src/calibration/coordinate_mapper.py`
     - Implement `__init__()` to load intrinsic and homography from JSON
     - Implement `map_to_board()` with undistortion and homography
@@ -116,17 +116,17 @@ The system projects a complete spiderweb overlay through the computed homography
     - Add threading.Lock for thread safety
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8_
   
-  - [ ] 9.2 Write property test for homography round-trip
+  - [x] 9.2 Write property test for homography round-trip
     - **Property 3: Homography Round-Trip Consistency**
     - For any board coordinate, map_to_image then map_to_board should return original (±1mm)
     - **Validates: Requirements 4.4, 4.7**
   
-  - [ ] 9.3 Write property test for bounds checking
+  - [x] 9.3 Write property test for bounds checking
     - **Property 5: Bounds Checking Returns None for Out-of-Bounds**
     - For pixels mapping to radius > 200mm, map_to_board should return None
     - **Validates: Requirements 4.6**
   
-  - [ ] 9.4 Write property test for thread safety
+  - [x] 9.4 Write property test for thread safety
     - **Property 8: Thread Safety Under Concurrent Access**
     - Concurrent calls from multiple threads should complete without corruption
     - **Validates: Requirements 4.8**
@@ -138,40 +138,40 @@ The system projects a complete spiderweb overlay through the computed homography
     - Test reload_calibration() functionality
     - _Requirements: 4.1, 4.5_
 
-- [ ] 10. Implement CalibrationManager class
-  - [ ] 10.1 Create `src/calibration/calibration_manager.py`
+- [x] 10. Implement CalibrationManager class
+  - [x] 10.1 Create `src/calibration/calibration_manager.py`
     - Implement `__init__()` with component dependencies
     - Implement state machine: ready, calibrating, error
     - Implement `get_status()` returning CalibrationStatus
     - _Requirements: 5.5, 6.1, 6.5_
   
-  - [ ] 10.2 Implement full calibration workflow
+  - [x] 10.2 Implement full calibration workflow
     - Implement `run_full_calibration()` orchestrating manual calibration
     - Handle calibration failures with retry logic
     - _Requirements: 5.1, 6.6_
   
-  - [ ] 10.3 Implement lightweight validation
+  - [x] 10.3 Implement lightweight validation
     - Implement `run_lightweight_validation()` checking bull center only
     - Compute drift as distance from expected (0, 0)
     - _Requirements: 5.2, 5.3_
   
-  - [ ] 10.4 Implement drift detection and recalibration
+  - [x] 10.4 Implement drift detection and recalibration
     - Implement `check_and_recalibrate()` triggering recalibration on drift > 3mm
     - Track consecutive failures, enter error state after 3
     - _Requirements: 5.3, 5.4, 6.6_
   
-  - [ ] 10.5 Write property test for drift detection
+  - [x] 10.5 Write property test for drift detection
     - **Property 6: Drift Detection Triggers Recalibration**
     - For drift > 3mm, state should transition to "calibrating"
     - **Validates: Requirements 5.3**
   
-  - [ ] 10.6 Write property test for state machine transitions
+  - [x] 10.6 Write property test for state machine transitions
     - **Property 7: State Machine Transitions Are Valid**
     - Verify only valid state transitions occur
     - After 3 failures, state should be "error"
     - **Validates: Requirements 6.1, 6.6**
 
-- [ ] 11. Checkpoint - Verify calibration manager works
+- [x] 11. Checkpoint - Verify calibration manager works
   - Test full calibration workflow on real camera
   - Test lightweight validation detects drift
   - Test state transitions: ready → calibrating → ready

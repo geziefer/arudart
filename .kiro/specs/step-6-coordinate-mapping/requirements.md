@@ -2,9 +2,9 @@
 
 ## Introduction
 
-This document specifies requirements for Step 6 - Coordinate Mapping using color-based calibration for the ARU-DART automatic dartboard scoring system. The system transforms pixel coordinates from each of 3 USB cameras to board-plane coordinates in millimeters using the dartboard's natural color patterns (black/white singles, red/green rings) as calibration reference points.
+This document specifies requirements for Step 6 - Coordinate Mapping using manual control point calibration for the ARU-DART automatic dartboard scoring system. The system transforms pixel coordinates from each of 3 USB cameras to board-plane coordinates in millimeters using 17 manually clicked wire-wire intersection points to compute a per-camera homography matrix.
 
-This approach replaces wire-based detection, which proved unreliable for thin modern dartboard wires, especially from angled cameras. Color-based sector boundary detection is more robust and works consistently across all camera angles.
+Manual control point calibration is the primary method, proven accurate and reliable across all camera angles. The user clicks on known board positions (bull center + 8 sector boundary intersections on inner triple ring + 8 on outer double ring), and the system computes a homography for each camera. Automatic feature detection (color-based) is preserved as an optional future enhancement but is not required for core functionality.
 
 ## Glossary
 
