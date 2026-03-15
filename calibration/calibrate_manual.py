@@ -74,6 +74,10 @@ def calibrate_from_frame(
     try:
         point_pairs = calibrator.calibrate(frame)
         
+        if calibrator.aborted:
+            logger.info("Calibration aborted by user")
+            return None  # Signal abort to caller
+        
         if len(point_pairs) < 4:
             logger.error(f"Insufficient points collected: {len(point_pairs)} < 4")
             return False
@@ -167,6 +171,8 @@ def main():
         )
         
         cv2.destroyAllWindows()
+        if success is None:
+            logger.info("Aborted by user")
         sys.exit(0 if success else 1)
     
     # Mode: live cameras
@@ -203,6 +209,7 @@ def main():
     
     # Calibrate each camera
     results = {}
+    aborted = False
     for camera_id in camera_ids:
         logger.info(f"Capturing frame from camera {camera_id}...")
         frame = camera_manager.get_latest_frame(camera_id)
@@ -215,6 +222,13 @@ def main():
         success = calibrate_from_frame(
             camera_id, frame, board_geometry, homography_calculator, args.output
         )
+        
+        if success is None:
+            # User aborted — exit everything
+            logger.info("Aborted by user")
+            aborted = True
+            break
+        
         results[camera_id] = success
         
         if not success:
@@ -229,6 +243,9 @@ def main():
     # Cleanup
     camera_manager.stop_all()
     cv2.destroyAllWindows()
+    
+    if aborted:
+        sys.exit(0)
     
     # Print final summary
     logger.info("\n=== Final Summary ===")

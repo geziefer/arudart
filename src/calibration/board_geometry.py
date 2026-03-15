@@ -44,21 +44,57 @@ class BoardGeometry:
     SECTOR_WIDTH_DEGREES = 18.0  # 360° / 20 sectors
     SECTOR_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
     
-    # Standard control points for manual calibration
-    # Format: (label, sector, ring_type, description)
+    # Standard control points for manual calibration.
+    # Each point is a TRUE wire-wire intersection: where a sector boundary wire
+    # physically crosses a ring wire. These are the most precise click targets
+    # because they are single, unambiguous points (two wires crossing).
+    #
+    # Format: (label, (sector_a, sector_b), ring_radius_key, description)
+    # - (sector_a, sector_b): The two sectors sharing the boundary wire
+    # - ring_radius_key: Which ring wire to intersect with
+    #
+    # Points are distributed symmetrically: 2 boundaries per cardinal direction.
+    # North: 20/1, 5/20  South: 19/3, 17/3  East: 6/13, 10/6  West: 8/11, 16/8
+    # Each boundary has both iT (inner triple) and oD (outer double) = 8x2 + bull = 17.
     CONTROL_POINTS = [
         ("BULL", None, "bull", "Bull center"),
-        ("T20", 20, "triple", "Triple 20 (top)"),
-        ("T5", 5, "triple", "Triple 5 (left)"),
-        ("T1", 1, "triple", "Triple 1 (right)"),
-        ("D20", 20, "double", "Double 20 (top)"),
-        ("D5", 5, "double", "Double 5 (left)"),
-        ("D1", 1, "double", "Double 1 (right)"),
-        ("S18", 18, "single", "Single 18 (upper right)"),
-        ("S4", 4, "single", "Single 4 (upper left)"),
-        ("S13", 13, "single", "Single 13 (lower left)"),
-        ("S6", 6, "single", "Single 6 (lower right)"),
+        # North
+        ("iT 20/1", (20, 1), "triple_inner", "iT 20/1 - inner triple at 20/1 boundary"),
+        ("iT 5/20", (5, 20), "triple_inner", "iT 5/20 - inner triple at 5/20 boundary"),
+        # South
+        ("iT 19/3", (19, 3), "triple_inner", "iT 19/3 - inner triple at 19/3 boundary"),
+        ("iT 17/3", (17, 3), "triple_inner", "iT 17/3 - inner triple at 17/3 boundary"),
+        # East
+        ("iT 6/13", (6, 13), "triple_inner", "iT 6/13 - inner triple at 6/13 boundary"),
+        ("iT 10/6", (10, 6), "triple_inner", "iT 10/6 - inner triple at 10/6 boundary"),
+        # West
+        ("iT 8/11", (8, 11), "triple_inner", "iT 8/11 - inner triple at 8/11 boundary"),
+        ("iT 16/8", (16, 8), "triple_inner", "iT 16/8 - inner triple at 16/8 boundary"),
+        # North
+        ("oD 20/1", (20, 1), "double_outer", "oD 20/1 - outer double at 20/1 boundary"),
+        ("oD 5/20", (5, 20), "double_outer", "oD 5/20 - outer double at 5/20 boundary"),
+        # South
+        ("oD 19/3", (19, 3), "double_outer", "oD 19/3 - outer double at 19/3 boundary"),
+        ("oD 17/3", (17, 3), "double_outer", "oD 17/3 - outer double at 17/3 boundary"),
+        # East
+        ("oD 6/13", (6, 13), "double_outer", "oD 6/13 - outer double at 6/13 boundary"),
+        ("oD 10/6", (10, 6), "double_outer", "oD 10/6 - outer double at 10/6 boundary"),
+        # West
+        ("oD 8/11", (8, 11), "double_outer", "oD 8/11 - outer double at 8/11 boundary"),
+        ("oD 16/8", (16, 8), "double_outer", "oD 16/8 - outer double at 16/8 boundary"),
     ]
+    
+    # Map ring radius keys to actual radii for wire intersections.
+    # These are the actual wire positions (not ring centers).
+    RING_WIRE_RADII = {
+        "bull": 0.0,
+        "double_bull": DOUBLE_BULL_RADIUS,
+        "single_bull": SINGLE_BULL_RADIUS,
+        "triple_inner": TRIPLE_RING_INNER_RADIUS,
+        "triple_outer": TRIPLE_RING_OUTER_RADIUS,
+        "double_inner": DOUBLE_RING_INNER_RADIUS,
+        "double_outer": DOUBLE_RING_OUTER_RADIUS,
+    }
     
     def __init__(self):
         """Initialize board geometry."""
@@ -68,18 +104,79 @@ class BoardGeometry:
         """
         Get standard control points with their board coordinates.
         
+        Control points are true wire-wire intersections: where a sector
+        boundary wire crosses a ring wire.
+        
         Returns:
             List of (label, (x, y)) tuples where x, y are in millimeters
         """
         control_points = []
         
-        for label, sector, ring_type, description in self.CONTROL_POINTS:
-            coords = self.get_board_coords(sector, ring_type)
-            if coords is not None:
-                control_points.append((label, coords))
-                logger.debug(f"Control point {label}: {coords}")
+        for label, sectors, ring_key, description in self.CONTROL_POINTS:
+            if ring_key == "bull":
+                control_points.append((label, (0.0, 0.0)))
+                continue
+            
+            # Get the boundary angle between the two sectors
+            sector_a, sector_b = sectors
+            angle_rad = self.get_sector_boundary_angle(sector_a, sector_b)
+            if angle_rad is None:
+                logger.warning(f"Invalid sector boundary: {sector_a}/{sector_b}")
+                continue
+            
+            # Get the ring wire radius
+            radius = self.RING_WIRE_RADII.get(ring_key)
+            if radius is None:
+                logger.warning(f"Invalid ring key: {ring_key}")
+                continue
+            
+            x = float(radius * np.cos(angle_rad))
+            y = float(radius * np.sin(angle_rad))
+            control_points.append((label, (x, y)))
+            logger.debug(f"Control point {label}: ({x:.1f}, {y:.1f})")
         
         return control_points
+    
+    def get_sector_boundary_angle(self, sector_a: int, sector_b: int) -> Optional[float]:
+        """
+        Get the angle of the boundary wire between two adjacent sectors.
+        
+        The boundary wire sits at the clockwise edge of sector_a
+        (= counter-clockwise edge of sector_b).
+        
+        Args:
+            sector_a: First sector number
+            sector_b: Second sector number (must be adjacent to sector_a)
+        
+        Returns:
+            Angle in radians, or None if sectors are not adjacent
+        """
+        if sector_a not in self.SECTOR_ORDER or sector_b not in self.SECTOR_ORDER:
+            return None
+        
+        idx_a = self.SECTOR_ORDER.index(sector_a)
+        idx_b = self.SECTOR_ORDER.index(sector_b)
+        
+        # Check adjacency (wrapping around)
+        if (idx_a + 1) % 20 == idx_b:
+            # sector_b is clockwise from sector_a
+            # Boundary is at the clockwise edge of sector_a
+            # = center of sector_a minus half a sector width
+            boundary_index = idx_a + 0.5
+        elif (idx_b + 1) % 20 == idx_a:
+            # sector_a is clockwise from sector_b
+            # Boundary is at the clockwise edge of sector_b
+            boundary_index = idx_b + 0.5
+        else:
+            logger.warning(f"Sectors {sector_a} and {sector_b} are not adjacent")
+            return None
+        
+        # Convert boundary index to angle
+        # Index 0 = sector 20 center at 90°, each index step = 18° clockwise
+        angle_degrees = 90 - (boundary_index * self.SECTOR_WIDTH_DEGREES)
+        angle_rad = np.deg2rad(angle_degrees) % (2 * np.pi)
+        
+        return float(angle_rad)
     
     def get_sector_angle(self, sector: int) -> float:
         """
@@ -196,7 +293,8 @@ class BoardGeometry:
         Generate complete spiderweb overlay (all sector boundaries and rings).
         
         Args:
-            homography: 3x3 homography matrix
+            homography: 3x3 homography matrix (image→board).
+                        Internally inverted to board→image for projection.
             num_ring_samples: Number of points to sample per ring
         
         Returns:
@@ -204,6 +302,14 @@ class BoardGeometry:
             - sector_boundaries: List of 20 line segments (each is [(u1,v1), (u2,v2)])
             - rings: Dict with ring names as keys, each containing list of (u,v) points
         """
+        # The homography passed in maps image→board.
+        # To project board coords onto the image, we need the inverse (board→image).
+        try:
+            H_board_to_image = np.linalg.inv(homography)
+        except np.linalg.LinAlgError:
+            logger.error("Cannot invert homography for spiderweb projection")
+            return {'sector_boundaries': [], 'rings': {}}
+        
         spiderweb = {
             'sector_boundaries': [],
             'rings': {}
@@ -216,13 +322,13 @@ class BoardGeometry:
             # Line from bull center to outer edge
             # Start at bull center
             start_board = (0.0, 0.0)
-            start_pixel = self.project_point(start_board, homography)
+            start_pixel = self.project_point(start_board, H_board_to_image)
             
             # End at board outer edge
             end_x = self.BOARD_RADIUS * np.cos(angle_rad)
             end_y = self.BOARD_RADIUS * np.sin(angle_rad)
             end_board = (float(end_x), float(end_y))
-            end_pixel = self.project_point(end_board, homography)
+            end_pixel = self.project_point(end_board, H_board_to_image)
             
             spiderweb['sector_boundaries'].append([start_pixel, end_pixel])
         
@@ -248,7 +354,7 @@ class BoardGeometry:
                 board_coords = (float(x), float(y))
                 
                 # Project to pixels
-                pixel_coords = self.project_point(board_coords, homography)
+                pixel_coords = self.project_point(board_coords, H_board_to_image)
                 ring_points.append(pixel_coords)
             
             spiderweb['rings'][ring_name] = ring_points

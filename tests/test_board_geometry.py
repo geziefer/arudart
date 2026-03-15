@@ -35,20 +35,68 @@ class TestBoardGeometry:
         """Test control point coordinate generation."""
         control_points = self.geometry.get_control_point_coords()
         
-        # Should have 11 standard control points
-        assert len(control_points) == 11
+        # Should have 17 wire intersection control points
+        # (bull + 8 triple-inner + 8 double-outer)
+        assert len(control_points) == 17
         
         # Check bull center
         bull_points = [cp for cp in control_points if cp[0] == "BULL"]
         assert len(bull_points) == 1
         assert bull_points[0][1] == (0.0, 0.0)
         
-        # Check T20 is at top (positive Y)
-        t20_points = [cp for cp in control_points if cp[0] == "T20"]
-        assert len(t20_points) == 1
-        x, y = t20_points[0][1]
-        assert abs(x) < 1.0  # Should be near X=0 (top of board)
-        assert y > 100.0  # Should be positive Y (up)
+        # Check iT 20/1 is near top (positive Y, slightly right)
+        t20_1 = [cp for cp in control_points if cp[0] == "iT 20/1"]
+        assert len(t20_1) == 1
+        x, y = t20_1[0][1]
+        assert y > 90.0  # Should be near top
+        
+        # All non-bull points should be wire intersections at known radii
+        for label, (x, y) in control_points:
+            if label == "BULL":
+                continue
+            radius = np.sqrt(x**2 + y**2)
+            if label.startswith("iT"):
+                # Triple inner ring wire
+                assert abs(radius - self.geometry.TRIPLE_RING_INNER_RADIUS) < 0.1, \
+                    f"{label} radius {radius:.1f} != {self.geometry.TRIPLE_RING_INNER_RADIUS}"
+            elif label.startswith("oD"):
+                # Double outer ring wire
+                assert abs(radius - self.geometry.DOUBLE_RING_OUTER_RADIUS) < 0.1, \
+                    f"{label} radius {radius:.1f} != {self.geometry.DOUBLE_RING_OUTER_RADIUS}"
+    
+    def test_sector_boundary_angle(self):
+        """Test sector boundary angle computation."""
+        # Boundary between sector 20 and sector 1 should be at 81° (90° - 9°)
+        angle = self.geometry.get_sector_boundary_angle(20, 1)
+        assert angle is not None
+        expected = np.deg2rad(81)
+        assert abs(angle - expected) < 0.01
+        
+        # Boundary between sector 5 and sector 20 should be at 99° (90° + 9°)
+        angle = self.geometry.get_sector_boundary_angle(5, 20)
+        assert angle is not None
+        expected = np.deg2rad(99)
+        assert abs(angle - expected) < 0.01
+        
+        # Boundary between sector 8 and sector 11 (west side)
+        angle = self.geometry.get_sector_boundary_angle(8, 11)
+        assert angle is not None
+        
+        # Boundary between sector 16 and sector 8 (west side)
+        angle = self.geometry.get_sector_boundary_angle(16, 8)
+        assert angle is not None
+        
+        # Boundary between sector 6 and sector 13 (east side)
+        angle = self.geometry.get_sector_boundary_angle(6, 13)
+        assert angle is not None
+        
+        # Boundary between sector 10 and sector 6 (east side)
+        angle = self.geometry.get_sector_boundary_angle(10, 6)
+        assert angle is not None
+        
+        # Non-adjacent sectors should return None
+        angle = self.geometry.get_sector_boundary_angle(20, 18)
+        assert angle is None
     
     def test_sector_angle_sector_20(self):
         """Test sector angle calculation for sector 20 (top)."""
@@ -120,7 +168,7 @@ class TestBoardGeometry:
         assert abs(radius - expected_radius) < 0.1
     
     def test_board_coords_single(self):
-        """Test board coordinates for single ring."""
+        """Test board coordinates for single ring (still valid even though not used as control points)."""
         coords = self.geometry.get_board_coords(20, "single")
         
         assert coords is not None
@@ -236,10 +284,12 @@ class TestBoardGeometry:
         # Create blank image
         image = np.zeros((600, 800, 3), dtype=np.uint8)
         
-        # Use identity homography centered in image
+        # generate_spiderweb expects an image→board homography and inverts it internally.
+        # We want board→image to translate by (+400, +300) to center the spiderweb.
+        # So the image→board homography should translate by (-400, -300).
         H = np.array([
-            [1, 0, 400],  # Translate to center X
-            [0, 1, 300],  # Translate to center Y
+            [1, 0, -400],  # image→board: subtract 400 from X
+            [0, 1, -300],  # image→board: subtract 300 from Y
             [0, 0, 1]
         ], dtype=np.float32)
         
