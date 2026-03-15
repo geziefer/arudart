@@ -10,6 +10,7 @@ from src.camera.camera_manager import CameraManager
 from src.processing.motion_detection import MotionDetector
 from src.processing.background_model import BackgroundModel
 from src.processing.dart_detection import DartDetector
+from src.calibration import CoordinateMapper, CalibrationManager, BoardGeometry
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -51,6 +52,9 @@ def main():
     parser.add_argument('--manual-test', action='store_true', help='Enable manual testing mode (pause/place dart/detect)')
     parser.add_argument('--record-mode', action='store_true', help='Enable recording mode (capture images for regression tests)')
     parser.add_argument('--single-camera', type=int, choices=[0, 1, 2], help='Test single camera only (0, 1, or 2)')
+    parser.add_argument('--calibrate', action='store_true', help='Run manual calibration at startup')
+    parser.add_argument('--calibrate-intrinsic', action='store_true', help='Run intrinsic calibration at startup')
+    parser.add_argument('--verify-calibration', action='store_true', help='Run calibration verification at startup')
     args = parser.parse_args()
     
     # Setup logging
@@ -84,6 +88,54 @@ def main():
         logger.info(f"Multi-camera mode: Using all {len(camera_ids)} cameras")
     
     camera_manager.start_all()
+    
+    # Run calibration scripts if requested (before main loop)
+    if args.calibrate or args.calibrate_intrinsic or args.verify_calibration:
+        import subprocess
+        import sys as _sys
+        python = _sys.executable
+        
+        if args.calibrate_intrinsic:
+            logger.info("Running intrinsic calibration...")
+            cmd = [python, "calibration/calibrate_intrinsic.py", "--config", args.config]
+            if args.single_camera is not None:
+                cmd += ["--camera", str(args.single_camera)]
+            result = subprocess.run(cmd)
+            if result.returncode != 0:
+                logger.error("Intrinsic calibration failed")
+                camera_manager.stop_all()
+                return
+        
+        if args.calibrate:
+            logger.info("Running manual calibration...")
+            cmd = [python, "calibration/calibrate_manual.py", "--config", args.config]
+            if args.single_camera is not None:
+                cmd += ["--camera", str(args.single_camera)]
+            result = subprocess.run(cmd)
+            if result.returncode != 0:
+                logger.error("Manual calibration failed")
+                camera_manager.stop_all()
+                return
+        
+        if args.verify_calibration:
+            logger.info("Running calibration verification...")
+            for cam_idx in ([args.single_camera] if args.single_camera is not None else [0, 1, 2]):
+                cmd = [python, "calibration/verify_calibration.py", "--camera", str(cam_idx), "--config", args.config]
+                result = subprocess.run(cmd)
+                if result.returncode != 0:
+                    logger.warning(f"Verification failed for camera {cam_idx}")
+    
+    # Initialize coordinate mapper
+    coordinate_mapper = CoordinateMapper(config)
+    calibrated_cameras = coordinate_mapper.get_calibrated_cameras()
+    if calibrated_cameras:
+        logger.info(f"Coordinate mapping active for cameras: {calibrated_cameras}")
+    else:
+        logger.warning("No cameras calibrated - board coordinates will not be available")
+    
+    # Initialize calibration manager
+    calibration_manager = CalibrationManager(config, coordinate_mapper)
+    board_geometry = BoardGeometry()
     
     # Initialize motion detector
     motion_config = config['motion_detection']
@@ -131,6 +183,8 @@ def main():
     pre_frames = {}  # Store pre-frames for current recording
     post_frames = {}  # Store post-frames for current recording
     recording_description = ""  # Current description being typed
+    show_spiderweb = False  # Toggle spiderweb overlay with 'v' key
+    spiderweb_cache = {}  # Cache generated spiderwebs per camera
     
     # Create recordings folder if in record mode
     if args.record_mode:
@@ -246,6 +300,11 @@ def main():
                                 background_model.add_post_impact_candidate(camera_id, frame)
                     
                     # Run detection on all cameras
+                    # Check calibration state - skip scoring if calibrating
+                    cal_status = calibration_manager.get_status()
+                    if cal_status.state == "calibrating":
+                        logger.info("Calibration in progress - skipping scoring")
+                    
                     throw_count += 1
                     throw_timestamp = datetime.now().strftime("%H-%M-%S")
                     throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
@@ -269,6 +328,17 @@ def main():
                                 'confidence': confidence,
                                 'debug_info': debug_info
                             }
+                            
+                            # Transform pixel to board coordinates if calibrated
+                            board_x, board_y = None, None
+                            if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                                board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
+                                if board_result is not None:
+                                    board_x, board_y = board_result
+                                    logger.info(f"  Camera {camera_id}: Board coords ({board_x:.1f}, {board_y:.1f}) mm")
+                            
+                            detections[camera_id]['board_x'] = board_x
+                            detections[camera_id]['board_y'] = board_y
                             
                             # Save annotated image
                             if tip_x is not None:
@@ -300,7 +370,10 @@ def main():
                         logger.info(f"Dart detected in {len(detected_cameras)}/{len(camera_ids)} cameras:")
                         for cam_id in detected_cameras:
                             det = detections[cam_id]
-                            logger.info(f"  Camera {cam_id}: Tip at ({det['tip_x']}, {det['tip_y']}), confidence: {det['confidence']:.2f}")
+                            board_str = ""
+                            if det.get('board_x') is not None:
+                                board_str = f", board=({det['board_x']:.1f}, {det['board_y']:.1f})mm"
+                            logger.info(f"  Camera {cam_id}: Tip at ({det['tip_x']}, {det['tip_y']}), confidence: {det['confidence']:.2f}{board_str}")
                     else:
                         logger.warning("No dart detected in any camera - saving images for analysis")
                     
@@ -383,6 +456,24 @@ def main():
                     cv2.putText(display_frame, f"Brightness: {mean_brightness:.1f}", (10, 90), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     
+                    # Draw spiderweb overlay if enabled and camera is calibrated
+                    if show_spiderweb and coordinate_mapper.is_calibrated(camera_id):
+                        if camera_id not in spiderweb_cache:
+                            with coordinate_mapper._lock:
+                                H = coordinate_mapper._homographies[camera_id].copy()
+                            spiderweb_cache[camera_id] = board_geometry.generate_spiderweb(H)
+                        display_frame = board_geometry.draw_spiderweb(
+                            display_frame, spiderweb_cache[camera_id],
+                            color=(0, 255, 255), thickness=1
+                        )
+                        # Show calibration status
+                        cal_status = calibration_manager.get_status()
+                        cal_text = f"Cal: {cal_status.state}"
+                        if cal_status.drift_mm is not None:
+                            cal_text += f" drift={cal_status.drift_mm:.1f}mm"
+                        cv2.putText(display_frame, cal_text, (10, 120),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                    
                     # Overlay histogram if requested
                     if args.show_histogram:
                         hist_img = draw_histogram(frame)
@@ -439,6 +530,10 @@ def main():
                 
                 if key == ord('q'):
                     break
+                elif key == ord('v'):
+                    show_spiderweb = not show_spiderweb
+                    spiderweb_cache.clear()  # Force regeneration
+                    logger.info(f"Spiderweb overlay: {'ON' if show_spiderweb else 'OFF'}")
                 elif key == ord('r'):
                     # In record mode: capture PRE frame
                     # In normal/manual-test mode: reset background
@@ -485,8 +580,23 @@ def main():
                         reset_message_time = current_time  # Show reset message
                         logger.info("=== BACKGROUND CAPTURED - Ready to detect darts ===")
                 elif key == ord('c'):
-                    # Capture POST frame in record mode
+                    # In record mode: capture POST frame
+                    # In dev mode (non-record): trigger manual calibration
                     if not args.record_mode:
+                        if args.dev_mode:
+                            logger.info("=== Running manual calibration (press q/ESC in calibration window to abort) ===")
+                            import subprocess
+                            import sys as _sys
+                            cmd = [_sys.executable, "calibration/calibrate_manual.py", "--config", args.config]
+                            result = subprocess.run(cmd)
+                            if result.returncode == 0:
+                                logger.info("Calibration complete - reloading coordinate mapper")
+                                coordinate_mapper.reload_calibration()
+                                spiderweb_cache.clear()
+                                calibrated_cameras = coordinate_mapper.get_calibrated_cameras()
+                                logger.info(f"Coordinate mapping active for cameras: {calibrated_cameras}")
+                            else:
+                                logger.warning("Calibration failed or was aborted")
                         continue
                     
                     if recording_state != "waiting_for_post":

@@ -178,14 +178,14 @@ The system projects a complete spiderweb overlay through the computed homography
   - Test failure handling: 3 failures → error state
   - Ask user if questions arise
 
-- [ ] 12. Implement intrinsic calibration script (preserved from original)
-  - [ ] 12.1 Create `src/calibration/intrinsic_calibrator.py`
+- [x] 12. Implement intrinsic calibration script (preserved from original)
+  - [x] 12.1 Create `src/calibration/intrinsic_calibrator.py`
     - Implement chessboard image capture with interactive UI
     - Implement calibration using cv2.calibrateCamera
     - Implement save to JSON format
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
   
-  - [ ] 12.2 Create `calibration/calibrate_intrinsic.py` script
+  - [x] 12.2 Create `calibration/calibrate_intrinsic.py` script
     - Interactive camera capture with live preview
     - Chessboard detection overlay
     - Capture 20-30 images at different angles
@@ -203,8 +203,8 @@ The system projects a complete spiderweb overlay through the computed homography
     - Display summary with reprojection errors
     - _Requirements: 1.1-1.9, 2.1-2.8, 3.1-3.5_
 
-- [ ] 14. Implement calibration verification script
-  - [ ] 14.1 Create `calibration/verify_calibration.py` script
+- [x] 14. Implement calibration verification script
+  - [x] 14.1 Create `calibration/verify_calibration.py` script
     - Interactive UI for clicking test points (T20, D20, bull, etc.)
     - Transform clicked pixels to board coordinates
     - Compute error vs known ground truth
@@ -212,46 +212,46 @@ The system projects a complete spiderweb overlay through the computed homography
     - Show spiderweb overlay for visual validation
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
   
-  - [ ] 14.2 Write property test for error computation
+  - [x] 14.2 Write property test for error computation
     - **Property 9 (continued): Verification error computation**
     - Verify average error calculation is correct
     - **Validates: Requirements 8.3, 8.4**
 
-- [ ] 15. Integrate coordinate mapper into main.py
-  - [ ] 15.1 Add CoordinateMapper initialization
+- [x] 15. Integrate coordinate mapper into main.py
+  - [x] 15.1 Add CoordinateMapper initialization
     - Import CoordinateMapper and CalibrationManager
     - Initialize after camera manager setup
     - Check which cameras are calibrated
     - Log warning if no cameras calibrated
     - _Requirements: 4.1, 5.1_
   
-  - [ ] 15.2 Add coordinate transformation to dart detection loop
+  - [x] 15.2 Add coordinate transformation to dart detection loop
     - After dart detection, transform pixel to board coordinates
     - Store both pixel and board coordinates in detection results
     - Log board coordinates for each detection
     - Handle cameras without calibration gracefully
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6_
   
-  - [ ] 15.3 Add calibration state checking
+  - [x] 15.3 Add calibration state checking
     - Check CalibrationManager status before processing throws
     - Skip scoring when state is "calibrating"
     - Log when calibration state changes
     - _Requirements: 6.2, 6.3_
   
-  - [ ] 15.4 Add command-line flags for calibration
+  - [x] 15.4 Add command-line flags for calibration
     - Add `--calibrate` flag to run manual calibration at startup
     - Add `--calibrate-intrinsic` flag to run intrinsic calibration
     - Add `--verify-calibration` flag to run verification script
     - _Requirements: 5.1, 7.1, 8.1_
   
-  - [ ] 15.5 Add keyboard shortcut for runtime calibration
+  - [x] 15.5 Add keyboard shortcut for runtime calibration
     - Add 'c' key handler to trigger manual calibration in dev mode
     - Run calibration for all cameras
     - Reload coordinate mapper after calibration
     - _Requirements: 5.4_
 
-- [ ] 16. Add calibration visualization for debugging
-  - [ ] 16.1 Implement calibration visualization overlay
+- [x] 16. Add calibration visualization for debugging
+  - [x] 16.1 Implement calibration visualization overlay
     - Draw spiderweb overlay (all sector boundaries and rings)
     - Draw control points with labels
     - Draw reprojection error vectors
