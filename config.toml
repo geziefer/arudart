@@ -117,3 +117,25 @@ max_reprojection_error_mm = 5.0  # Maximum acceptable reprojection error in mm
 [calibration.chessboard]
 inner_corners = [9, 6]  # Chessboard inner corners (width, height)
 square_size_mm = 25.0  # Chessboard square size in millimeters
+
+# Multi-camera fusion configuration
+[fusion]
+outlier_threshold_mm = 50.0
+min_confidence = 0.3
+
+# Dartboard dimensions (Winmau Blade 6 specifications)
+[board]
+radius_mm = 170.0
+bull_radius_mm = 6.35
+single_bull_radius_mm = 15.9
+triple_inner_mm = 99.0
+triple_outer_mm = 107.0
+double_inner_mm = 162.0
+double_outer_mm = 170.0
+
+# Sector configuration
+[board.sectors]
+sector_order = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
+sector_width_deg = 18.0
+wire_gap_deg = 2.0
+sector_offset_deg = 0.0

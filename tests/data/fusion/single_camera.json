@@ -1,0 +1,17 @@
+{
+  "description": "Single camera detection - T20 from cam0 only",
+  "detections": [
+    {
+      "camera_id": 0,
+      "pixel": [412, 288],
+      "board": [0.0, 103.0],
+      "confidence": 0.85
+    }
+  ],
+  "expected": {
+    "score_total": 60,
+    "ring": "triple",
+    "sector": 20,
+    "num_cameras": 1
+  }
+}

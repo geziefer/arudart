@@ -1,0 +1,29 @@
+{
+  "description": "Three cameras detecting near T20 - slight position variance",
+  "detections": [
+    {
+      "camera_id": 0,
+      "pixel": [412, 288],
+      "board": [1.8, 102.5],
+      "confidence": 0.85
+    },
+    {
+      "camera_id": 1,
+      "pixel": [399, 301],
+      "board": [-0.5, 104.2],
+      "confidence": 0.78
+    },
+    {
+      "camera_id": 2,
+      "pixel": [425, 296],
+      "board": [2.1, 103.8],
+      "confidence": 0.83
+    }
+  ],
+  "expected": {
+    "score_total": 60,
+    "ring": "triple",
+    "sector": 20,
+    "num_cameras": 3
+  }
+}

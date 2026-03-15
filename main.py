@@ -5,12 +5,14 @@ import cv2
 import numpy as np
 from datetime import datetime
 from pathlib import Path
+import json
 from src.config import load_config
 from src.camera.camera_manager import CameraManager
 from src.processing.motion_detection import MotionDetector
 from src.processing.background_model import BackgroundModel
 from src.processing.dart_detection import DartDetector
 from src.calibration import CoordinateMapper, CalibrationManager, BoardGeometry
+from src.fusion import ScoreCalculator
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -133,6 +135,10 @@ def main():
     else:
         logger.warning("No cameras calibrated - board coordinates will not be available")
     
+    # Initialize score calculator for multi-camera fusion
+    score_calculator = ScoreCalculator(config)
+    logger.info("Score calculator initialized")
+
     # Initialize calibration manager
     calibration_manager = CalibrationManager(config, coordinate_mapper)
     board_geometry = BoardGeometry()
@@ -378,6 +384,55 @@ def main():
                         logger.warning("No dart detected in any camera - saving images for analysis")
                     
                     logger.info(f"Saved images to {throw_dir}")
+                    
+                    # --- Multi-camera fusion and scoring ---
+                    if cal_status.state != "calibrating" and detected_cameras:
+                        # Collect detections with board coordinates for fusion
+                        fusion_detections = []
+                        image_paths = {}
+                        for cam_id in detected_cameras:
+                            det = detections[cam_id]
+                            if det.get('board_x') is not None and det.get('board_y') is not None:
+                                fusion_detections.append({
+                                    'camera_id': cam_id,
+                                    'pixel': (det['tip_x'], det['tip_y']),
+                                    'board': (det['board_x'], det['board_y']),
+                                    'confidence': det['confidence'],
+                                })
+                                annotated_path = str(throw_dir / f"cam{cam_id}_annotated.jpg")
+                                image_paths[str(cam_id)] = annotated_path
+                        
+                        if fusion_detections:
+                            dart_hit_event = score_calculator.process_detections(
+                                fusion_detections, image_paths=image_paths
+                            )
+                            
+                            if dart_hit_event is not None:
+                                # Log fusion results
+                                score = dart_hit_event.score
+                                logger.info(
+                                    f"Score: {score.total} "
+                                    f"(base={score.base}, multiplier={score.multiplier}, "
+                                    f"ring={score.ring}, sector={score.sector})"
+                                )
+                                logger.info(
+                                    f"Position: board=({dart_hit_event.board_x:.1f}, {dart_hit_event.board_y:.1f})mm, "
+                                    f"r={dart_hit_event.radius:.1f}mm, theta={dart_hit_event.angle_deg:.1f}deg"
+                                )
+                                logger.info(
+                                    f"Fusion: cameras={dart_hit_event.cameras_used}, "
+                                    f"confidence={dart_hit_event.fusion_confidence:.2f}"
+                                )
+                                
+                                # Save DartHitEvent to JSON
+                                event_path = throw_dir / f"event_{throw_timestamp}.json"
+                                with open(event_path, 'w') as f:
+                                    json.dump(dart_hit_event.to_dict(), f, indent=2)
+                                logger.info(f"Saved event to {event_path}")
+                            else:
+                                logger.warning("No valid detections after fusion")
+                        else:
+                            logger.warning("No detections with board coordinates for fusion")
                     
                     # Update background to include this dart for next throw
                     # Use post-impact frame (with dart) as new pre-impact for next detection

@@ -1,0 +1,29 @@
+{
+  "description": "Three cameras, cam2 is an outlier (>50mm from median)",
+  "detections": [
+    {
+      "camera_id": 0,
+      "pixel": [412, 288],
+      "board": [0.0, 103.0],
+      "confidence": 0.90
+    },
+    {
+      "camera_id": 1,
+      "pixel": [399, 301],
+      "board": [0.0, 104.0],
+      "confidence": 0.85
+    },
+    {
+      "camera_id": 2,
+      "pixel": [300, 400],
+      "board": [0.0, 200.0],
+      "confidence": 0.70
+    }
+  ],
+  "expected": {
+    "score_total": 60,
+    "ring": "triple",
+    "sector": 20,
+    "note": "cam2 rejected as outlier, fused from cam0+cam1 only"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "description": "Known control points with expected scores",
+  "points": [
+    {
+      "name": "T20",
+      "board": [0.0, 103.0],
+      "expected": {"score_total": 60, "ring": "triple", "sector": 20}
+    },
+    {
+      "name": "D20",
+      "board": [0.0, 166.0],
+      "expected": {"score_total": 40, "ring": "double", "sector": 20}
+    },
+    {
+      "name": "S20",
+      "board": [0.0, 50.0],
+      "expected": {"score_total": 20, "ring": "single", "sector": 20}
+    },
+    {
+      "name": "Bull",
+      "board": [1.0, 1.0],
+      "expected": {"score_total": 50, "ring": "bull", "sector": null}
+    },
+    {
+      "name": "Single Bull",
+      "board": [0.0, 10.0],
+      "expected": {"score_total": 25, "ring": "single_bull", "sector": null}
+    },
+    {
+      "name": "Out of Bounds",
+      "board": [0.0, 180.0],
+      "expected": {"score_total": 0, "ring": "out_of_bounds", "sector": null}
+    },
+    {
+      "name": "T19",
+      "board": [-97.57, -33.44],
+      "expected": {"score_total": 57, "ring": "triple", "sector": 19}
+    },
+    {
+      "name": "D3",
+      "board": [-157.95, -54.09],
+      "expected": {"score_total": 6, "ring": "double", "sector": 3}
+    }
+  ]
+}
