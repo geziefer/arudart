@@ -349,6 +349,10 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
                 state_start = current_time
 
         elif state == "detecting":
+            # Clear previous result immediately
+            last_score_text = ""
+            last_detail_text = ""
+            last_cameras_text = ""
             # Capture post frames
             for camera_id in camera_ids:
                 frame = camera_manager.get_latest_frame(camera_id)
@@ -486,17 +490,20 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
                 cv2.putText(display, f"Detecting in {remaining:.0f}s", (w // 2 - 130, h // 2 + 20),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
-            elif state in ("detecting", "result"):
-                remaining = max(0, result_time - elapsed) if state == "result" else 0
+            elif state == "detecting":
+                cv2.putText(display, "Detecting...", (w // 2 - 120, h // 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+
+            elif state == "result":
+                remaining = max(0, result_time - elapsed)
                 cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 20),
                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
                 cv2.putText(display, last_detail_text, (20, h - 60),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 cv2.putText(display, last_cameras_text, (20, h - 35),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                if state == "result":
-                    cv2.putText(display, f"Next in {remaining:.0f}s", (20, h - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+                cv2.putText(display, f"Next in {remaining:.0f}s", (20, h - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
             cv2.putText(display, f"Throw #{throw_count}", (w - 160, 30),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
