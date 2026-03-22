@@ -13,6 +13,8 @@ from src.processing.background_model import BackgroundModel
 from src.processing.dart_detection import DartDetector
 from src.calibration import CoordinateMapper, CalibrationManager, BoardGeometry
 from src.fusion import ScoreCalculator
+from src.diagnostics import DiagnosticLogger, AccuracyTestRunner
+from src.diagnostics.known_positions import build_known_positions
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -48,7 +50,7 @@ def draw_histogram(frame):
 
 def run_single_dart_test(camera_ids, camera_manager, motion_detector, background_model,
                          dart_detectors, coordinate_mapper, calibration_manager,
-                         score_calculator, session_dir, config, logger):
+                         score_calculator, session_dir, config, logger, diagnostic_logger=None):
     """Timed single-dart test loop.
 
     Cycle:
@@ -219,6 +221,10 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
                         event_path = throw_dir / f"event_{throw_timestamp}.json"
                         with open(event_path, 'w') as f:
                             json.dump(event.to_dict(), f, indent=2)
+
+                        # Log to diagnostics if enabled
+                        if diagnostic_logger is not None:
+                            diagnostic_logger.log_detection(event)
                     else:
                         last_score_text = "Fusion failed"
                 else:
@@ -284,7 +290,7 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
 
 def run_manual_dart_test(camera_ids, camera_manager, background_model,
                          dart_detectors, coordinate_mapper, calibration_manager,
-                         score_calculator, session_dir, config, logger):
+                         score_calculator, session_dir, config, logger, diagnostic_logger=None):
     """Manual single-dart test loop with fixed countdown (no motion detection).
 
     Cycle:
@@ -442,6 +448,10 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
                         event_path = throw_dir / f"event_{throw_timestamp}.json"
                         with open(event_path, 'w') as f:
                             json.dump(event.to_dict(), f, indent=2)
+
+                        # Log to diagnostics if enabled
+                        if diagnostic_logger is not None:
+                            diagnostic_logger.log_detection(event)
                     else:
                         last_score_text = "Fusion failed"
                 else:
@@ -517,6 +527,253 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
     cv2.destroyAllWindows()
 
 
+def run_accuracy_test(camera_ids, camera_manager, background_model,
+                      dart_detectors, coordinate_mapper, calibration_manager,
+                      score_calculator, config, logger, accuracy_runner):
+    """Accuracy test loop using manual-dart-test state machine.
+
+    Guides the user through placing darts at known board positions,
+    detects each placement, and records results via AccuracyTestRunner.
+
+    Cycle:
+      1. Stabilize background (2s, hands clear)
+      2. "Place dart at: T20" with 5s countdown
+      3. Capture post frame, run detection + fusion, record result
+      4. Show comparison results for 5s
+      5. "REMOVE DART" with 3s countdown
+      6. Back to 1 (or finish if all positions tested)
+    Press 'q' or ESC to quit.
+    """
+    remove_time = 3.0
+    stabilize_time = 2.0
+    place_time = 5.0
+    result_time = 5.0
+
+    state = "stabilize"
+    state_start = time.time()
+    last_score_text = ""
+    last_detail_text = ""
+    last_cameras_text = ""
+    last_comparison_text = ""
+
+    for i, camera_id in enumerate(camera_ids):
+        cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
+        cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
+
+    total_positions = len(accuracy_runner.positions)
+    logger.info("=== ACCURACY TEST MODE ===")
+    logger.info(f"Testing {total_positions} known positions")
+    logger.info("Stabilizing cameras...")
+
+    while True:
+        current_time = time.time()
+        elapsed = current_time - state_start
+
+        frames = {}
+        for camera_id in camera_ids:
+            frame = camera_manager.get_latest_frame(camera_id)
+            if frame is not None:
+                frames[camera_id] = frame
+
+        if not frames:
+            time.sleep(0.01)
+            continue
+
+        # Check if all positions tested
+        if accuracy_runner.is_complete():
+            logger.info("All positions tested!")
+            break
+
+        target = accuracy_runner.get_current_target()
+        target_num = accuracy_runner.current_index + 1
+        target_label = f"Target {target_num}/{total_positions}: {target.name}" if target else "Complete"
+
+        # --- State machine ---
+        if state == "stabilize":
+            if elapsed >= stabilize_time:
+                for camera_id, frame in frames.items():
+                    background_model.update_pre_impact(camera_id, frame)
+                for det in dart_detectors.values():
+                    det.reset_previous_darts()
+                logger.info(f"Background captured - place dart at: {target.name}")
+                state = "placing"
+                state_start = current_time
+
+        elif state == "placing":
+            if elapsed >= place_time:
+                state = "detecting"
+                state_start = current_time
+
+        elif state == "detecting":
+            last_score_text = ""
+            last_detail_text = ""
+            last_cameras_text = ""
+            last_comparison_text = ""
+
+            for camera_id in camera_ids:
+                frame = camera_manager.get_latest_frame(camera_id)
+                if frame is not None:
+                    background_model.add_post_impact_candidate(camera_id, frame)
+
+            detections = {}
+            for camera_id in camera_ids:
+                if not background_model.has_pre_impact(camera_id):
+                    continue
+                pre_frame = background_model.get_pre_impact(camera_id)
+                post_frame = background_model.get_best_post_impact(camera_id)
+                if post_frame is None:
+                    continue
+
+                tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(
+                    pre_frame, post_frame, mask_previous=False
+                )
+                detections[camera_id] = {
+                    'tip_x': tip_x, 'tip_y': tip_y,
+                    'confidence': confidence, 'debug_info': debug_info,
+                }
+
+                board_x, board_y = None, None
+                if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                    board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
+                    if board_result is not None:
+                        board_x, board_y = board_result
+                detections[camera_id]['board_x'] = board_x
+                detections[camera_id]['board_y'] = board_y
+
+            detected_cameras = [cid for cid, d in detections.items() if d['tip_x'] is not None]
+            last_score_text = "No detection"
+            last_detail_text = ""
+            last_cameras_text = f"Detected: {len(detected_cameras)}/{len(camera_ids)} cams"
+            last_comparison_text = ""
+
+            if detected_cameras:
+                fusion_detections = []
+                image_paths = {}
+                for cam_id in detected_cameras:
+                    det = detections[cam_id]
+                    if det.get('board_x') is not None:
+                        fusion_detections.append({
+                            'camera_id': cam_id,
+                            'pixel': (det['tip_x'], det['tip_y']),
+                            'board': (det['board_x'], det['board_y']),
+                            'confidence': det['confidence'],
+                        })
+
+                if fusion_detections:
+                    event = score_calculator.process_detections(fusion_detections, image_paths=image_paths)
+                    if event is not None:
+                        # Record result via accuracy runner
+                        accuracy_runner.record_result(event)
+                        result = accuracy_runner.results[-1]
+
+                        s = event.score
+                        if s.ring == "bull":
+                            last_score_text = "BULL (50)"
+                        elif s.ring == "single_bull":
+                            last_score_text = "Single Bull (25)"
+                        elif s.ring == "out_of_bounds":
+                            last_score_text = "MISS (0)"
+                        else:
+                            ring_prefix = {"triple": "T", "double": "D", "single": "S"}.get(s.ring, "")
+                            last_score_text = f"{ring_prefix}{s.sector} = {s.total}"
+                        last_detail_text = f"r={event.radius:.1f}mm  angle={event.angle_deg:.0f}deg  conf={event.fusion_confidence:.2f}"
+                        last_cameras_text = f"Cameras: {event.cameras_used} ({event.num_cameras} used)"
+
+                        # Build comparison text
+                        ring_ok = "Y" if result["ring_match"] else "N"
+                        sector_ok = "Y" if result["sector_match"] else "N"
+                        last_comparison_text = (
+                            f"Expected: {target.expected_score}  Detected: {result['detected_score']}  "
+                            f"PosErr: {result['position_error_mm']:.1f}mm  "
+                            f"Ring:{ring_ok} Sector:{sector_ok}"
+                        )
+                        logger.info(
+                            f"{target.name}: detected={last_score_text} expected={target.expected_score} "
+                            f"pos_err={result['position_error_mm']:.1f}mm "
+                            f"ring={ring_ok} sector={sector_ok}"
+                        )
+                    else:
+                        last_score_text = "Fusion failed"
+                else:
+                    last_score_text = "No board coords"
+
+            state = "result"
+            state_start = current_time
+
+        elif state == "result":
+            if elapsed >= result_time:
+                if accuracy_runner.is_complete():
+                    logger.info("All positions tested!")
+                    break
+                state = "removing"
+                state_start = current_time
+                logger.info("Remove dart now...")
+
+        elif state == "removing":
+            if elapsed >= remove_time:
+                state = "stabilize"
+                state_start = current_time
+                logger.info("Stabilizing background...")
+
+        # --- Display ---
+        for camera_id in camera_ids:
+            if camera_id not in frames:
+                continue
+            display = frames[camera_id].copy()
+            h, w = display.shape[:2]
+
+            if state == "stabilize":
+                cv2.putText(display, "Stabilizing...", (w // 2 - 120, h // 2 - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+                cv2.putText(display, "Keep hands clear", (w // 2 - 130, h // 2 + 25),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+
+            elif state == "removing":
+                remaining = max(0, remove_time - elapsed)
+                cv2.putText(display, "REMOVE DART", (w // 2 - 140, h // 2 - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 165, 255), 3)
+                cv2.putText(display, f"{remaining:.0f}s", (w // 2 - 20, h // 2 + 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+            elif state == "placing":
+                remaining = max(0, place_time - elapsed)
+                cv2.putText(display, f"Place dart at: {target.name}", (w // 2 - 180, h // 2 - 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+                cv2.putText(display, f"Detecting in {remaining:.0f}s", (w // 2 - 130, h // 2 + 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+            elif state == "detecting":
+                cv2.putText(display, "Detecting...", (w // 2 - 120, h // 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+
+            elif state == "result":
+                remaining = max(0, result_time - elapsed)
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                if last_comparison_text:
+                    cv2.putText(display, last_comparison_text, (20, h - 80),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+                cv2.putText(display, last_detail_text, (20, h - 55),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, last_cameras_text, (20, h - 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, f"Next in {remaining:.0f}s", (20, h - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+            # Progress counter top-right
+            cv2.putText(display, target_label, (w - 280, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            cv2.imshow(f"Camera {camera_id}", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
+
+    cv2.destroyAllWindows()
+
+
 def main():
     parser = argparse.ArgumentParser(description='ARU-DART Camera Capture')
     parser.add_argument('--config', default='config.toml', help='Path to config file')
@@ -530,8 +787,18 @@ def main():
     parser.add_argument('--verify-calibration', action='store_true', help='Run calibration verification at startup')
     parser.add_argument('--single-dart-test', action='store_true', help='Timed single dart test loop (auto background/detect/display)')
     parser.add_argument('--manual-dart-test', action='store_true', help='Manual single dart test loop (place by hand with countdown)')
+    parser.add_argument('--diagnostics', action='store_true', help='Enable diagnostic logging (requires --manual-dart-test or --single-dart-test)')
+    parser.add_argument('--accuracy-test', action='store_true', help='Run accuracy test mode (implies --diagnostics)')
     args = parser.parse_args()
-    
+
+    # --accuracy-test implies --diagnostics
+    if args.accuracy_test:
+        args.diagnostics = True
+
+    # --diagnostics requires a test mode
+    if args.diagnostics and not (args.manual_dart_test or args.single_dart_test or args.accuracy_test):
+        parser.error("--diagnostics requires --manual-dart-test, --single-dart-test, or --accuracy-test")
+
     # Setup logging
     logger = setup_logging()
     logger.info("Starting ARU-DART camera capture")
@@ -616,6 +883,53 @@ def main():
     calibration_manager = CalibrationManager(config, coordinate_mapper)
     board_geometry = BoardGeometry()
 
+    # --- Accuracy test mode ---
+    if args.accuracy_test:
+        dart_config = config['dart_detection']
+        dart_detectors = {}
+        for cam_id in camera_ids:
+            dart_detectors[cam_id] = DartDetector(
+                diff_threshold=dart_config['diff_threshold'],
+                blur_kernel=dart_config['blur_kernel'],
+                min_dart_area=dart_config['min_dart_area'],
+                max_dart_area=dart_config['max_dart_area'],
+                min_shaft_length=dart_config['min_shaft_length'],
+                aspect_ratio_min=dart_config['aspect_ratio_min']
+            )
+        background_model = BackgroundModel()
+
+        # Build known positions and create accuracy test runner
+        diagnostic_logger = DiagnosticLogger()
+        logger.info(f"Accuracy test diagnostics: {diagnostic_logger.session_dir}")
+        known_positions = build_known_positions(board_geometry)
+        accuracy_runner = AccuracyTestRunner(
+            known_positions=known_positions,
+            diagnostic_logger=diagnostic_logger,
+            score_calculator=score_calculator,
+        )
+        logger.info(f"Accuracy test: {len(known_positions)} positions to test")
+
+        try:
+            run_accuracy_test(
+                camera_ids, camera_manager, background_model,
+                dart_detectors, coordinate_mapper, calibration_manager,
+                score_calculator, config, logger, accuracy_runner
+            )
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
+            # Generate and save report
+            report = accuracy_runner.generate_report()
+            report_path = diagnostic_logger.session_dir / "accuracy_report.json"
+            with open(report_path, 'w') as f:
+                json.dump(report.to_dict(), f, indent=2)
+            report.print_summary()
+            diagnostic_logger.write_session_summary()
+            logger.info(f"Report saved to: {report_path}")
+            camera_manager.stop_all()
+            logger.info("Shutdown complete")
+        return
+
     # --- Single dart test mode: run dedicated loop and exit ---
     if args.single_dart_test:
         dart_config = config['dart_detection']
@@ -645,15 +959,23 @@ def main():
         session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
         session_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Session folder: {session_dir}")
+        diagnostic_logger = None
+        if args.diagnostics:
+            diagnostic_logger = DiagnosticLogger()
+            logger.info(f"Diagnostics enabled: {diagnostic_logger.session_dir}")
         try:
             run_single_dart_test(
                 camera_ids, camera_manager, motion_detector, background_model,
                 dart_detectors, coordinate_mapper, calibration_manager,
-                score_calculator, session_dir, config, logger
+                score_calculator, session_dir, config, logger,
+                diagnostic_logger=diagnostic_logger
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
         finally:
+            if diagnostic_logger is not None:
+                diagnostic_logger.write_session_summary()
+                logger.info(f"Diagnostics saved to: {diagnostic_logger.session_dir}")
             camera_manager.stop_all()
             logger.info("Shutdown complete")
         return
@@ -680,15 +1002,23 @@ def main():
         session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
         session_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Session folder: {session_dir}")
+        diagnostic_logger = None
+        if args.diagnostics:
+            diagnostic_logger = DiagnosticLogger()
+            logger.info(f"Diagnostics enabled: {diagnostic_logger.session_dir}")
         try:
             run_manual_dart_test(
                 camera_ids, camera_manager, background_model,
                 dart_detectors, coordinate_mapper, calibration_manager,
-                score_calculator, session_dir, config, logger
+                score_calculator, session_dir, config, logger,
+                diagnostic_logger=diagnostic_logger
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
         finally:
+            if diagnostic_logger is not None:
+                diagnostic_logger.write_session_summary()
+                logger.info(f"Diagnostics saved to: {diagnostic_logger.session_dir}")
             camera_manager.stop_all()
             logger.info("Shutdown complete")
         return

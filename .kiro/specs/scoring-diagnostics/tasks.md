@@ -6,8 +6,8 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
 
 ## Tasks
 
-- [ ] 1. Create diagnostics package with DetectionRecord and CameraDiagnostic data models
-  - [ ] 1.1 Create `src/diagnostics/__init__.py` and `src/diagnostics/detection_record.py`
+- [x] 1. Create diagnostics package with DetectionRecord and CameraDiagnostic data models
+  - [x] 1.1 Create `src/diagnostics/__init__.py` and `src/diagnostics/detection_record.py`
     - Define `CameraDiagnostic` dataclass with fields: camera_id, pixel_x, pixel_y, board_x, board_y, confidence, deviation_mm, deviation_dx, deviation_dy
     - Define `DetectionRecord` dataclass with fields: timestamp, board_x, board_y, radius, angle_deg, ring, sector, score_total, score_base, score_multiplier, fusion_confidence, cameras_used, camera_data (list of CameraDiagnostic), image_paths
     - Implement `to_dict()` and `from_dict()` for JSON round-trip on both dataclasses
@@ -15,39 +15,39 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
     - Export `DetectionRecord` and `CameraDiagnostic` from `__init__.py`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 7.1, 7.2_
 
-  - [ ]* 1.2 Write property test: DetectionRecord preserves DartHitEvent fields
+  - [x] 1.2 Write property test: DetectionRecord preserves DartHitEvent fields
     - **Property 1: DetectionRecord preserves DartHitEvent fields**
     - Generate random DartHitEvent objects (random coords, scores, 1-3 camera detections), create DetectionRecord via from_dart_hit_event(), verify all fields match source event
     - **Validates: Requirements 1.1, 1.2, 1.3**
 
-  - [ ]* 1.3 Write property test: DetectionRecord JSON round-trip
+  - [x] 1.3 Write property test: DetectionRecord JSON round-trip
     - **Property 2: DetectionRecord JSON round-trip**
     - Generate random DetectionRecord objects, serialize with to_dict(), deserialize with from_dict(), verify equivalence within float tolerance
     - **Validates: Requirements 1.4, 1.5**
 
-  - [ ]* 1.4 Write property test: Camera deviation vector consistency
+  - [x] 1.4 Write property test: Camera deviation vector consistency
     - **Property 3: Camera deviation vector consistency**
     - Generate random fused positions and camera board positions, create DetectionRecord, verify deviation_mm == sqrt(dx^2 + dy^2) and dx/dy match camera.board - fused
     - **Validates: Requirements 7.1, 7.2**
 
-- [ ] 2. Implement DiagnosticLogger for session management and persistence
-  - [ ] 2.1 Create `src/diagnostics/diagnostic_logger.py`
+- [x] 2. Implement DiagnosticLogger for session management and persistence
+  - [x] 2.1 Create `src/diagnostics/diagnostic_logger.py`
     - Implement `DiagnosticLogger.__init__(base_dir="data/diagnostics")`: create session directory `Session_NNN_YYYY-MM-DD_HH-MM-SS`, initialize throw_count=0 and records list
     - Implement `log_detection(event: DartHitEvent) -> DetectionRecord`: create DetectionRecord from event, increment throw_count, write `throw_NNN_HH-MM-SS.json`, copy annotated images into session dir (warn and skip if missing), append to records
     - Implement `write_session_summary()`: compute total_throws, successful_detections (non-zero cameras_used), average_fusion_confidence, per-camera aggregate stats (mean/max deviation, mean deviation vector dx/dy), write `session_summary.json`
     - Expose `session_dir` as read-only property
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 7.3_
 
-  - [ ]* 2.2 Write property test: Session summary aggregation correctness
+  - [x] 2.2 Write property test: Session summary aggregation correctness
     - **Property 4: Session summary aggregation correctness**
     - Generate random sequences of DetectionRecord objects, feed to DiagnosticLogger, verify session summary total_throws, successful_detections, average_fusion_confidence, and per-camera mean/max deviation match manual computation
     - **Validates: Requirements 2.4, 7.3**
 
-- [ ] 3. Checkpoint
+- [x] 3. Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement KnownPosition catalog and BoardGeometry integration
-  - [ ] 4.1 Create `src/diagnostics/known_positions.py`
+- [x] 4. Implement KnownPosition catalog and BoardGeometry integration
+  - [x] 4.1 Create `src/diagnostics/known_positions.py`
     - Define `KnownPosition` dataclass with fields: name, expected_x, expected_y, expected_ring, expected_sector (int|None), expected_score
     - Implement `build_known_positions(board_geometry: BoardGeometry) -> list[KnownPosition]` that computes all 14 required positions:
       - DB: (0, 0), ring="bull", sector=None, score=50
@@ -60,23 +60,23 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
     - Implement helper `compute_position_error(x1, y1, x2, y2) -> float` returning Euclidean distance
     - _Requirements: 4.1, 4.2, 4.3, 5.4, 5.5_
 
-  - [ ]* 4.2 Write property test: Known position coordinates match BoardGeometry
+  - [x] 4.2 Write property test: Known position coordinates match BoardGeometry
     - **Property 5: Known position coordinates match BoardGeometry**
     - For each known position with a sector, verify coordinates match board_geometry.get_board_coords() or the small-single formula
     - **Validates: Requirements 4.2, 4.3**
 
-  - [ ]* 4.3 Write property test: Position error is Euclidean distance
+  - [x] 4.3 Write property test: Position error is Euclidean distance
     - **Property 6: Position error is Euclidean distance**
     - Generate random pairs of board coordinates, verify compute_position_error matches sqrt((x1-x2)^2 + (y1-y2)^2)
     - **Validates: Requirements 5.4**
 
-  - [ ]* 4.4 Write property test: Angular error handles wraparound
+  - [x] 4.4 Write property test: Angular error handles wraparound
     - **Property 7: Angular error handles wraparound**
     - Generate random pairs of angles in [0, 360), verify compute_angular_error equals min(|a-b|, 360-|a-b|) and result is in [0, 180]
     - **Validates: Requirements 5.5**
 
-- [ ] 5. Implement TestReport and TestReportGenerator
-  - [ ] 5.1 Create `src/diagnostics/test_report.py`
+- [x] 5. Implement TestReport and TestReportGenerator
+  - [x] 5.1 Create `src/diagnostics/test_report.py`
     - Define `TestReport` dataclass with fields: session_dir, overall (total_throws, sector_match_rate, ring_match_rate, score_match_rate, mean_position_error_mm, max_position_error_mm), per_throw (list of dicts with target_name, expected_score, detected_score, position_error_mm, angular_error_deg, ring_match, sector_match), per_camera (dict of camera_id to mean/max deviation)
     - Implement `to_dict()` and `from_dict()` for JSON round-trip
     - Implement `print_summary()` for human-readable console output (ASCII only, no unicode)
@@ -84,21 +84,21 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
     - Handle zero-throw edge case (no division by zero, report N/A or 0)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-  - [ ]* 5.2 Write property test: Report metric aggregation correctness
+  - [x] 5.2 Write property test: Report metric aggregation correctness
     - **Property 8: Report metric aggregation correctness**
     - Generate random lists of per-throw accuracy results (random match booleans, position errors), verify report metrics match manual aggregation
     - **Validates: Requirements 6.2, 6.3, 6.4**
 
-  - [ ]* 5.3 Write property test: TestReport JSON round-trip
+  - [x] 5.3 Write property test: TestReport JSON round-trip
     - **Property 9: TestReport JSON round-trip**
     - Generate random TestReport objects, round-trip through to_dict()/from_dict(), verify equivalence within float tolerance
     - **Validates: Requirements 6.6**
 
-- [ ] 6. Checkpoint
+- [x] 6. Checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implement AccuracyTestRunner
-  - [ ] 7.1 Create `src/diagnostics/accuracy_test_runner.py`
+- [x] 7. Implement AccuracyTestRunner
+  - [x] 7.1 Create `src/diagnostics/accuracy_test_runner.py`
     - Implement `AccuracyTestRunner.__init__(known_positions, diagnostic_logger, score_calculator)`: store positions list, set current_index=0, initialize results list
     - Implement `get_current_target() -> KnownPosition | None`: return current position or None if complete
     - Implement `record_result(event: DartHitEvent)`: log detection via diagnostic_logger, compute position_error (Euclidean), angular_error (wraparound-safe), ring_match, sector_match, score_match against current target, append to results, advance current_index
@@ -107,28 +107,28 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
     - Support optional position filtering (subset selection) via constructor parameter
     - _Requirements: 4.4, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1_
 
-  - [ ]* 7.2 Write unit tests for AccuracyTestRunner
+  - [x] 7.2 Write unit tests for AccuracyTestRunner
     - Test record_result with a known DartHitEvent and known target, verify position_error, angular_error, ring_match, sector_match, score_match
     - Test is_complete transitions correctly
     - Test generate_report produces valid TestReport
     - _Requirements: 5.4, 5.5, 5.6_
 
-- [ ] 8. Integrate CLI flags and wire into main.py
-  - [ ] 8.1 Add `--diagnostics` and `--accuracy-test` CLI flags to argparse in main.py
+- [x] 8. Integrate CLI flags and wire into main.py
+  - [x] 8.1 Add `--diagnostics` and `--accuracy-test` CLI flags to argparse in main.py
     - `--diagnostics`: add-on flag, store_true
     - `--accuracy-test`: standalone flag, store_true
     - Validate: `--diagnostics` without `--manual-dart-test` or `--single-dart-test` prints error and exits
     - `--accuracy-test` implies diagnostics
     - _Requirements: 3.1, 3.4, 5.1_
 
-  - [ ] 8.2 Wire DiagnosticLogger into existing test modes
+  - [x] 8.2 Wire DiagnosticLogger into existing test modes
     - When `--diagnostics` is active: instantiate DiagnosticLogger, print session_dir at startup
     - After each `score_calculator.process_detections()` that returns a DartHitEvent, call `diagnostic_logger.log_detection(event)`
     - On exit (finally block), call `diagnostic_logger.write_session_summary()`
     - Wire into both `run_manual_dart_test` and `run_single_dart_test` by passing diagnostic_logger as optional parameter
     - _Requirements: 3.1, 3.2, 3.3, 2.1, 2.2, 2.3_
 
-  - [ ] 8.3 Wire AccuracyTestRunner into main.py as `--accuracy-test` mode
+  - [x] 8.3 Wire AccuracyTestRunner into main.py as `--accuracy-test` mode
     - When `--accuracy-test`: instantiate BoardGeometry, build known positions, create DiagnosticLogger, create AccuracyTestRunner
     - Reuse the manual-dart-test state machine (stabilize -> placing -> detecting -> result -> removing)
     - Display current target name on camera windows during placing state (e.g., "Place dart at: T20")
@@ -136,7 +136,7 @@ Implement diagnostic logging and accuracy testing for the ARU-DART scoring pipel
     - On completion or quit: generate report, write to session dir, print summary to console, write session summary
     - _Requirements: 5.1, 5.2, 5.3, 5.7, 6.1, 6.5_
 
-- [ ] 9. Final checkpoint
+- [x] 9. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
