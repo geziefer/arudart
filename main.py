@@ -46,6 +46,470 @@ def draw_histogram(frame):
     return hist_img
 
 
+def run_single_dart_test(camera_ids, camera_manager, motion_detector, background_model,
+                         dart_detectors, coordinate_mapper, calibration_manager,
+                         score_calculator, session_dir, config, logger):
+    """Timed single-dart test loop.
+
+    Cycle:
+      1. Capture background, show "READY - throw dart" with 3s countdown
+      2. Wait for motion detection, run detection + fusion
+      3. Display result for 5s countdown, then repeat
+    Press 'q' or ESC to quit.
+    """
+    motion_config = config['motion_detection']
+    throw_count = 0
+    fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
+
+    # States: "stabilize", "countdown_throw", "waiting", "detected", "countdown_result"
+    state = "stabilize"
+    state_start = time.time()
+    last_score_text = ""
+    last_detail_text = ""
+    last_cameras_text = ""
+
+    # Create windows
+    for i, camera_id in enumerate(camera_ids):
+        cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
+        cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
+
+    logger.info("=== SINGLE DART TEST MODE ===")
+    logger.info("Stabilizing cameras...")
+
+    while True:
+        current_time = time.time()
+        elapsed = current_time - state_start
+
+        # Get frames
+        frames = {}
+        for camera_id in camera_ids:
+            frame = camera_manager.get_latest_frame(camera_id)
+            if frame is not None:
+                frames[camera_id] = frame
+                fps_counters[camera_id].tick()
+
+        if not frames:
+            time.sleep(0.01)
+            continue
+
+        # --- State machine ---
+        if state == "stabilize":
+            # Wait 2s for cameras to settle, then capture background
+            if elapsed >= 2.0:
+                for camera_id, frame in frames.items():
+                    motion_detector.update_background(camera_id, frame)
+                    background_model.update_pre_impact(camera_id, frame)
+                for det in dart_detectors.values():
+                    det.reset_previous_darts()
+                # Reset persistent change tracker
+                for camera_id in camera_ids:
+                    motion_detector.persistent_change_start[camera_id] = None
+                logger.info("Background captured - starting throw countdown")
+                state = "countdown_throw"
+                state_start = current_time
+
+        elif state == "countdown_throw":
+            # 3s countdown, then start listening for motion
+            if elapsed >= 3.0:
+                state = "waiting"
+                state_start = current_time
+                logger.info("Waiting for dart throw...")
+
+        elif state == "waiting":
+            # Check for persistent change (dart landed)
+            persistent_change, per_camera_motion, max_motion = motion_detector.detect_persistent_change(
+                frames, current_time, persistence_time=0.3
+            )
+            if persistent_change:
+                state = "detected"
+                state_start = current_time
+                logger.info(f"=== DART THROW DETECTED (motion {max_motion:.2f}%) ===")
+
+        elif state == "detected":
+            # Capture post frames and run detection
+            time.sleep(0.3)  # Brief settle
+            for camera_id in camera_ids:
+                frame = camera_manager.get_latest_frame(camera_id)
+                if frame is not None:
+                    background_model.add_post_impact_candidate(camera_id, frame)
+
+            throw_count += 1
+            throw_timestamp = datetime.now().strftime("%H-%M-%S")
+            throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
+            throw_dir.mkdir(parents=True, exist_ok=True)
+
+            detections = {}
+            for camera_id in camera_ids:
+                if not background_model.has_pre_impact(camera_id):
+                    continue
+                pre_frame = background_model.get_pre_impact(camera_id)
+                post_frame = background_model.get_best_post_impact(camera_id)
+                if post_frame is None:
+                    continue
+
+                tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(
+                    pre_frame, post_frame, mask_previous=False
+                )
+                detections[camera_id] = {
+                    'tip_x': tip_x, 'tip_y': tip_y,
+                    'confidence': confidence, 'debug_info': debug_info,
+                }
+
+                board_x, board_y = None, None
+                if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                    board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
+                    if board_result is not None:
+                        board_x, board_y = board_result
+                detections[camera_id]['board_x'] = board_x
+                detections[camera_id]['board_y'] = board_y
+
+                # Save images
+                if tip_x is not None:
+                    annotated = post_frame.copy()
+                    cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
+                    cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
+                    cv2.putText(annotated, f"({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    if debug_info and 'contour' in debug_info:
+                        cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), annotated)
+                else:
+                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), post_frame)
+                cv2.imwrite(str(throw_dir / f"cam{camera_id}_pre.jpg"), pre_frame)
+                cv2.imwrite(str(throw_dir / f"cam{camera_id}_post.jpg"), post_frame)
+
+            # Fusion + scoring
+            detected_cameras = [cid for cid, d in detections.items() if d['tip_x'] is not None]
+            last_score_text = "No detection"
+            last_detail_text = ""
+            last_cameras_text = f"Detected: {len(detected_cameras)}/{len(camera_ids)} cams"
+
+            if detected_cameras:
+                fusion_detections = []
+                image_paths = {}
+                for cam_id in detected_cameras:
+                    det = detections[cam_id]
+                    if det.get('board_x') is not None:
+                        fusion_detections.append({
+                            'camera_id': cam_id,
+                            'pixel': (det['tip_x'], det['tip_y']),
+                            'board': (det['board_x'], det['board_y']),
+                            'confidence': det['confidence'],
+                        })
+                        image_paths[str(cam_id)] = str(throw_dir / f"cam{cam_id}_annotated.jpg")
+
+                if fusion_detections:
+                    event = score_calculator.process_detections(fusion_detections, image_paths=image_paths)
+                    if event is not None:
+                        s = event.score
+                        if s.ring == "bull":
+                            last_score_text = "BULL (50)"
+                        elif s.ring == "single_bull":
+                            last_score_text = "Single Bull (25)"
+                        elif s.ring == "out_of_bounds":
+                            last_score_text = "MISS (0)"
+                        else:
+                            ring_prefix = {"triple": "T", "double": "D", "single": "S"}.get(s.ring, "")
+                            last_score_text = f"{ring_prefix}{s.sector} = {s.total}"
+                        last_detail_text = f"r={event.radius:.1f}mm  angle={event.angle_deg:.0f}deg  conf={event.fusion_confidence:.2f}"
+                        last_cameras_text = f"Cameras: {event.cameras_used} ({event.num_cameras} used)"
+                        logger.info(f"Throw {throw_count}: {last_score_text} | {last_detail_text}")
+
+                        event_path = throw_dir / f"event_{throw_timestamp}.json"
+                        with open(event_path, 'w') as f:
+                            json.dump(event.to_dict(), f, indent=2)
+                    else:
+                        last_score_text = "Fusion failed"
+                else:
+                    last_score_text = "No board coords"
+
+            state = "countdown_result"
+            state_start = current_time
+
+        elif state == "countdown_result":
+            # Show result for 5s, then restart cycle
+            if elapsed >= 5.0:
+                state = "stabilize"
+                state_start = current_time
+                logger.info("Resetting for next throw...")
+
+        # --- Display ---
+        for camera_id in camera_ids:
+            if camera_id not in frames:
+                continue
+            display = frames[camera_id].copy()
+            h, w = display.shape[:2]
+
+            if state == "stabilize":
+                cv2.putText(display, "Stabilizing...", (w // 2 - 120, h // 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+
+            elif state == "countdown_throw":
+                remaining = max(0, 3.0 - elapsed)
+                cv2.putText(display, f"Throw in {remaining:.0f}s", (w // 2 - 130, h // 2 - 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+                cv2.putText(display, "Remove dart from board", (w // 2 - 180, h // 2 + 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+            elif state == "waiting":
+                cv2.putText(display, "THROW NOW", (w // 2 - 120, h // 2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+
+            elif state in ("detected", "countdown_result"):
+                remaining = max(0, 5.0 - elapsed) if state == "countdown_result" else 0
+                # Score in large text
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                cv2.putText(display, last_detail_text, (20, h - 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, last_cameras_text, (20, h - 35),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                if state == "countdown_result":
+                    cv2.putText(display, f"Next in {remaining:.0f}s", (20, h - 10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+            # Throw counter top-right
+            cv2.putText(display, f"Throw #{throw_count}", (w - 160, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            cv2.imshow(f"Camera {camera_id}", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
+
+    cv2.destroyAllWindows()
+
+
+def run_manual_dart_test(camera_ids, camera_manager, background_model,
+                         dart_detectors, coordinate_mapper, calibration_manager,
+                         score_calculator, session_dir, config, logger):
+    """Manual single-dart test loop with fixed countdown (no motion detection).
+
+    Cycle:
+      1. Show result for 5s
+      2. "REMOVE DART" with 3s countdown
+      3. Stabilize background (2s, hands clear)
+      4. "PUT IN NOW" with 5s countdown for placing dart by hand
+      5. Capture post frame, run detection + fusion
+      6. Back to 1
+    Press 'q' or ESC to quit.
+    """
+    remove_time = 3.0   # Seconds to remove dart
+    stabilize_time = 2.0  # Seconds to stabilize (hands clear)
+    place_time = 5.0    # Seconds to place dart
+    result_time = 5.0   # Seconds to show result
+    throw_count = 0
+
+    # States: "stabilize", "placing", "detecting", "result", "removing"
+    # First run starts at "stabilize" (no dart to remove yet)
+    state = "stabilize"
+    state_start = time.time()
+    last_score_text = ""
+    last_detail_text = ""
+    last_cameras_text = ""
+
+    for i, camera_id in enumerate(camera_ids):
+        cv2.namedWindow(f"Camera {camera_id}", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(f"Camera {camera_id}", 640, 480)
+        cv2.moveWindow(f"Camera {camera_id}", i * 200, i * 150)
+
+    logger.info("=== MANUAL DART TEST MODE ===")
+    logger.info("Stabilizing cameras...")
+
+    while True:
+        current_time = time.time()
+        elapsed = current_time - state_start
+
+        frames = {}
+        for camera_id in camera_ids:
+            frame = camera_manager.get_latest_frame(camera_id)
+            if frame is not None:
+                frames[camera_id] = frame
+
+        if not frames:
+            time.sleep(0.01)
+            continue
+
+        # --- State machine ---
+        if state == "stabilize":
+            if elapsed >= stabilize_time:
+                for camera_id, frame in frames.items():
+                    background_model.update_pre_impact(camera_id, frame)
+                for det in dart_detectors.values():
+                    det.reset_previous_darts()
+                logger.info("Background captured - place your dart")
+                state = "placing"
+                state_start = current_time
+
+        elif state == "placing":
+            if elapsed >= place_time:
+                state = "detecting"
+                state_start = current_time
+
+        elif state == "detecting":
+            # Capture post frames
+            for camera_id in camera_ids:
+                frame = camera_manager.get_latest_frame(camera_id)
+                if frame is not None:
+                    background_model.add_post_impact_candidate(camera_id, frame)
+
+            throw_count += 1
+            throw_timestamp = datetime.now().strftime("%H-%M-%S")
+            throw_dir = session_dir / f"Throw_{throw_count:03d}_{throw_timestamp}"
+            throw_dir.mkdir(parents=True, exist_ok=True)
+
+            detections = {}
+            for camera_id in camera_ids:
+                if not background_model.has_pre_impact(camera_id):
+                    continue
+                pre_frame = background_model.get_pre_impact(camera_id)
+                post_frame = background_model.get_best_post_impact(camera_id)
+                if post_frame is None:
+                    continue
+
+                tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(
+                    pre_frame, post_frame, mask_previous=False
+                )
+                detections[camera_id] = {
+                    'tip_x': tip_x, 'tip_y': tip_y,
+                    'confidence': confidence, 'debug_info': debug_info,
+                }
+
+                board_x, board_y = None, None
+                if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                    board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
+                    if board_result is not None:
+                        board_x, board_y = board_result
+                detections[camera_id]['board_x'] = board_x
+                detections[camera_id]['board_y'] = board_y
+
+                if tip_x is not None:
+                    annotated = post_frame.copy()
+                    cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
+                    cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
+                    cv2.putText(annotated, f"({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    if debug_info and 'contour' in debug_info:
+                        cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), annotated)
+                else:
+                    cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), post_frame)
+                cv2.imwrite(str(throw_dir / f"cam{camera_id}_pre.jpg"), pre_frame)
+                cv2.imwrite(str(throw_dir / f"cam{camera_id}_post.jpg"), post_frame)
+
+            detected_cameras = [cid for cid, d in detections.items() if d['tip_x'] is not None]
+            last_score_text = "No detection"
+            last_detail_text = ""
+            last_cameras_text = f"Detected: {len(detected_cameras)}/{len(camera_ids)} cams"
+
+            if detected_cameras:
+                fusion_detections = []
+                image_paths = {}
+                for cam_id in detected_cameras:
+                    det = detections[cam_id]
+                    if det.get('board_x') is not None:
+                        fusion_detections.append({
+                            'camera_id': cam_id,
+                            'pixel': (det['tip_x'], det['tip_y']),
+                            'board': (det['board_x'], det['board_y']),
+                            'confidence': det['confidence'],
+                        })
+                        image_paths[str(cam_id)] = str(throw_dir / f"cam{cam_id}_annotated.jpg")
+
+                if fusion_detections:
+                    event = score_calculator.process_detections(fusion_detections, image_paths=image_paths)
+                    if event is not None:
+                        s = event.score
+                        if s.ring == "bull":
+                            last_score_text = "BULL (50)"
+                        elif s.ring == "single_bull":
+                            last_score_text = "Single Bull (25)"
+                        elif s.ring == "out_of_bounds":
+                            last_score_text = "MISS (0)"
+                        else:
+                            ring_prefix = {"triple": "T", "double": "D", "single": "S"}.get(s.ring, "")
+                            last_score_text = f"{ring_prefix}{s.sector} = {s.total}"
+                        last_detail_text = f"r={event.radius:.1f}mm  angle={event.angle_deg:.0f}deg  conf={event.fusion_confidence:.2f}"
+                        last_cameras_text = f"Cameras: {event.cameras_used} ({event.num_cameras} used)"
+                        logger.info(f"Throw {throw_count}: {last_score_text} | {last_detail_text}")
+
+                        event_path = throw_dir / f"event_{throw_timestamp}.json"
+                        with open(event_path, 'w') as f:
+                            json.dump(event.to_dict(), f, indent=2)
+                    else:
+                        last_score_text = "Fusion failed"
+                else:
+                    last_score_text = "No board coords"
+
+            state = "result"
+            state_start = current_time
+
+        elif state == "result":
+            if elapsed >= result_time:
+                state = "removing"
+                state_start = current_time
+                logger.info("Remove dart now...")
+
+        elif state == "removing":
+            if elapsed >= remove_time:
+                state = "stabilize"
+                state_start = current_time
+                logger.info("Stabilizing background...")
+
+        # --- Display ---
+        for camera_id in camera_ids:
+            if camera_id not in frames:
+                continue
+            display = frames[camera_id].copy()
+            h, w = display.shape[:2]
+
+            if state == "stabilize":
+                remaining = max(0, stabilize_time - elapsed)
+                cv2.putText(display, "Stabilizing...", (w // 2 - 120, h // 2 - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+                cv2.putText(display, "Keep hands clear", (w // 2 - 130, h // 2 + 25),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+
+            elif state == "removing":
+                remaining = max(0, remove_time - elapsed)
+                cv2.putText(display, "REMOVE DART", (w // 2 - 140, h // 2 - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 165, 255), 3)
+                cv2.putText(display, f"{remaining:.0f}s", (w // 2 - 20, h // 2 + 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+            elif state == "placing":
+                remaining = max(0, place_time - elapsed)
+                cv2.putText(display, "PUT IN NOW", (w // 2 - 130, h // 2 - 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+                cv2.putText(display, f"Detecting in {remaining:.0f}s", (w // 2 - 130, h // 2 + 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+            elif state in ("detecting", "result"):
+                remaining = max(0, result_time - elapsed) if state == "result" else 0
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                cv2.putText(display, last_detail_text, (20, h - 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, last_cameras_text, (20, h - 35),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                if state == "result":
+                    cv2.putText(display, f"Next in {remaining:.0f}s", (20, h - 10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+            cv2.putText(display, f"Throw #{throw_count}", (w - 160, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            cv2.imshow(f"Camera {camera_id}", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
+
+    cv2.destroyAllWindows()
+
+
 def main():
     parser = argparse.ArgumentParser(description='ARU-DART Camera Capture')
     parser.add_argument('--config', default='config.toml', help='Path to config file')
@@ -57,6 +521,8 @@ def main():
     parser.add_argument('--calibrate', action='store_true', help='Run manual calibration at startup')
     parser.add_argument('--calibrate-intrinsic', action='store_true', help='Run intrinsic calibration at startup')
     parser.add_argument('--verify-calibration', action='store_true', help='Run calibration verification at startup')
+    parser.add_argument('--single-dart-test', action='store_true', help='Timed single dart test loop (auto background/detect/display)')
+    parser.add_argument('--manual-dart-test', action='store_true', help='Manual single dart test loop (place by hand with countdown)')
     args = parser.parse_args()
     
     # Setup logging
@@ -142,6 +608,83 @@ def main():
     # Initialize calibration manager
     calibration_manager = CalibrationManager(config, coordinate_mapper)
     board_geometry = BoardGeometry()
+
+    # --- Single dart test mode: run dedicated loop and exit ---
+    if args.single_dart_test:
+        dart_config = config['dart_detection']
+        dart_detectors = {}
+        for cam_id in camera_ids:
+            dart_detectors[cam_id] = DartDetector(
+                diff_threshold=dart_config['diff_threshold'],
+                blur_kernel=dart_config['blur_kernel'],
+                min_dart_area=dart_config['min_dart_area'],
+                max_dart_area=dart_config['max_dart_area'],
+                min_shaft_length=dart_config['min_shaft_length'],
+                aspect_ratio_min=dart_config['aspect_ratio_min']
+            )
+        motion_config = config['motion_detection']
+        motion_detector = MotionDetector(
+            downscale_factor=motion_config['downscale_factor'],
+            motion_threshold=motion_config['motion_threshold'],
+            blur_kernel=motion_config['blur_kernel'],
+            settled_threshold=motion_config['settled_threshold']
+        )
+        background_model = BackgroundModel()
+        session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        throws_dir = Path("data/throws")
+        throws_dir.mkdir(parents=True, exist_ok=True)
+        existing_sessions = list(throws_dir.glob("Session_*"))
+        session_number = len(existing_sessions) + 1
+        session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Session folder: {session_dir}")
+        try:
+            run_single_dart_test(
+                camera_ids, camera_manager, motion_detector, background_model,
+                dart_detectors, coordinate_mapper, calibration_manager,
+                score_calculator, session_dir, config, logger
+            )
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
+            camera_manager.stop_all()
+            logger.info("Shutdown complete")
+        return
+
+    # --- Manual dart test mode: fixed countdown, no motion detection ---
+    if args.manual_dart_test:
+        dart_config = config['dart_detection']
+        dart_detectors = {}
+        for cam_id in camera_ids:
+            dart_detectors[cam_id] = DartDetector(
+                diff_threshold=dart_config['diff_threshold'],
+                blur_kernel=dart_config['blur_kernel'],
+                min_dart_area=dart_config['min_dart_area'],
+                max_dart_area=dart_config['max_dart_area'],
+                min_shaft_length=dart_config['min_shaft_length'],
+                aspect_ratio_min=dart_config['aspect_ratio_min']
+            )
+        background_model = BackgroundModel()
+        session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        throws_dir = Path("data/throws")
+        throws_dir.mkdir(parents=True, exist_ok=True)
+        existing_sessions = list(throws_dir.glob("Session_*"))
+        session_number = len(existing_sessions) + 1
+        session_dir = throws_dir / f"Session_{session_number:03d}_{session_timestamp}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Session folder: {session_dir}")
+        try:
+            run_manual_dart_test(
+                camera_ids, camera_manager, background_model,
+                dart_detectors, coordinate_mapper, calibration_manager,
+                score_calculator, session_dir, config, logger
+            )
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
+            camera_manager.stop_all()
+            logger.info("Shutdown complete")
+        return
     
     # Initialize motion detector
     motion_config = config['motion_detection']
