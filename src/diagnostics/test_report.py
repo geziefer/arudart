@@ -10,6 +10,7 @@ from typing import Any
 
 @dataclass
 class TestReport:
+    __test__ = False  # Not a pytest test class
     """Structured accuracy test report.
 
     Contains overall metrics, per-throw detail, and per-camera deviation
