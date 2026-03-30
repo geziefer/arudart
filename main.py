@@ -304,7 +304,7 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
     """
     remove_time = 3.0   # Seconds to remove dart
     stabilize_time = 2.0  # Seconds to stabilize (hands clear)
-    place_time = 5.0    # Seconds to place dart
+    place_time = 7.0    # Seconds to place dart
     result_time = 5.0   # Seconds to show result
     throw_count = 0
 
@@ -546,7 +546,7 @@ def run_accuracy_test(camera_ids, camera_manager, background_model,
     """
     remove_time = 3.0
     stabilize_time = 2.0
-    place_time = 5.0
+    place_time = 7.0
     result_time = 5.0
 
     state = "stabilize"
@@ -789,6 +789,8 @@ def main():
     parser.add_argument('--manual-dart-test', action='store_true', help='Manual single dart test loop (place by hand with countdown)')
     parser.add_argument('--diagnostics', action='store_true', help='Enable diagnostic logging (requires --manual-dart-test or --single-dart-test)')
     parser.add_argument('--accuracy-test', action='store_true', help='Run accuracy test mode (implies --diagnostics)')
+    parser.add_argument('--ring', type=str, choices=['T', 'D', 'BS', 'SS'],
+                        help='Ring filter for accuracy test: T=triple, D=double, BS=big single, SS=small single. Tests all 20 sectors for that ring.')
     args = parser.parse_args()
 
     # --accuracy-test implies --diagnostics
@@ -901,7 +903,7 @@ def main():
         # Build known positions and create accuracy test runner
         diagnostic_logger = DiagnosticLogger()
         logger.info(f"Accuracy test diagnostics: {diagnostic_logger.session_dir}")
-        known_positions = build_known_positions(board_geometry)
+        known_positions = build_known_positions(board_geometry, ring_filter=args.ring)
         accuracy_runner = AccuracyTestRunner(
             known_positions=known_positions,
             diagnostic_logger=diagnostic_logger,

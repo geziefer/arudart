@@ -33,18 +33,35 @@ class KnownPosition:
     expected_score: int
 
 
-def build_known_positions(board_geometry: BoardGeometry) -> list[KnownPosition]:
-    """Compute all 14 required known positions from board geometry.
+def build_known_positions(
+    board_geometry: BoardGeometry,
+    ring_filter: Optional[str] = None,
+) -> list[KnownPosition]:
+    """Compute known positions from board geometry.
 
-    Positions: DB, SB, T20, T1, T5, D20, D1, D5, BS20, BS1, BS5,
-    SS20, SS1, SS5.
+    When ring_filter is None, returns the original 14-position set
+    (DB, SB, plus T/D/BS/SS for sectors 20, 1, 5).
+
+    When ring_filter is provided ("T", "D", "BS", or "SS"), returns
+    positions for that ring across all 20 sectors in clockwise order
+    starting from 20. Bulls are excluded.
 
     Args:
         board_geometry: BoardGeometry instance for coordinate computation.
+        ring_filter: Optional ring abbreviation to filter by.
+            "T" = triple, "D" = double, "BS" = big single, "SS" = small single.
+            None = original 14-position set.
 
     Returns:
-        List of 14 KnownPosition objects.
+        List of KnownPosition objects.
     """
+    # All 20 sectors in clockwise order from 20
+    all_sectors = BoardGeometry.SECTOR_ORDER  # [20, 1, 18, 4, 13, ...]
+
+    if ring_filter is not None:
+        return _build_ring_positions(board_geometry, ring_filter, all_sectors)
+
+    # Original 14-position set (backward compatible)
     positions: list[KnownPosition] = []
 
     # DB (double bull) — board center
@@ -116,6 +133,66 @@ def build_known_positions(board_geometry: BoardGeometry) -> list[KnownPosition]:
             expected_ring="single",
             expected_sector=sector,
             expected_score=sector,
+        ))
+
+    return positions
+
+
+def _build_ring_positions(
+    board_geometry: BoardGeometry,
+    ring_filter: str,
+    sectors: list[int],
+) -> list[KnownPosition]:
+    """Build positions for a single ring across all 20 sectors.
+
+    Args:
+        board_geometry: BoardGeometry instance.
+        ring_filter: "T", "D", "BS", or "SS".
+        sectors: Ordered list of sector numbers.
+
+    Returns:
+        List of 20 KnownPosition objects.
+    """
+    ring_map = {
+        "T":  ("triple",  "triple"),
+        "D":  ("double",  "double"),
+        "BS": ("single",  "single"),
+        "SS": ("single",  None),   # SS uses custom radius, not get_board_coords
+    }
+
+    if ring_filter not in ring_map:
+        raise ValueError(f"Invalid ring_filter '{ring_filter}'. Must be T, D, BS, or SS.")
+
+    ring_name, board_ring_type = ring_map[ring_filter]
+    positions: list[KnownPosition] = []
+
+    ss_radius = (BoardGeometry.SINGLE_BULL_RADIUS + BoardGeometry.TRIPLE_RING_INNER_RADIUS) / 2
+
+    for sector in sectors:
+        if ring_filter == "SS":
+            angle = board_geometry.get_sector_angle(sector)
+            x = ss_radius * math.cos(angle)
+            y = ss_radius * math.sin(angle)
+        else:
+            coords = board_geometry.get_board_coords(sector, board_ring_type)
+            if coords is None:
+                continue
+            x, y = coords
+
+        if ring_filter == "T":
+            score = sector * 3
+        elif ring_filter == "D":
+            score = sector * 2
+        else:
+            score = sector
+
+        positions.append(KnownPosition(
+            name=f"{ring_filter}{sector}",
+            expected_x=x,
+            expected_y=y,
+            expected_ring=ring_name,
+            expected_sector=sector,
+            expected_score=score,
         ))
 
     return positions
