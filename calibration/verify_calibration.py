@@ -83,8 +83,12 @@ class VerificationUI:
         self.skipped = []
         self.click_pos = None
         self.show_spiderweb = True
+        self.mouse_x = 0
+        self.mouse_y = 0
 
     def _mouse_callback(self, event, x, y, flags, param):
+        self.mouse_x = x
+        self.mouse_y = y
         if event == cv2.EVENT_LBUTTONDOWN:
             self.click_pos = (x, y)
 
@@ -155,9 +159,50 @@ class VerificationUI:
         cv2.destroyWindow(window)
         return self.results
 
+    def _draw_zoom_overlay(self, display: np.ndarray) -> None:
+        """Draw a 4x magnified zoom inset with crosshair in top-right corner."""
+        zoom_size = 150
+        zoom_factor = 4
+        roi_half = zoom_size // (zoom_factor * 2)
+
+        h, w = self.frame.shape[:2]
+        x1 = max(0, self.mouse_x - roi_half)
+        y1 = max(0, self.mouse_y - roi_half)
+        x2 = min(w, self.mouse_x + roi_half)
+        y2 = min(h, self.mouse_y + roi_half)
+
+        roi = self.frame[y1:y2, x1:x2]
+        if roi.size == 0:
+            return
+
+        zoomed = cv2.resize(roi, (zoom_size, zoom_size), interpolation=cv2.INTER_LINEAR)
+
+        c = zoom_size // 2
+        cv2.line(zoomed, (c - 30, c), (c + 30, c), (0, 255, 255), 2)
+        cv2.line(zoomed, (c, c - 30), (c, c + 30), (0, 255, 255), 2)
+        cv2.circle(zoomed, (c, c), 3, (0, 255, 255), -1)
+
+        cv2.rectangle(zoomed, (0, 0), (zoom_size - 1, zoom_size - 1), (255, 255, 255), 2)
+
+        margin = 10
+        y_off = margin
+        x_off = display.shape[1] - zoom_size - margin
+        display[y_off:y_off + zoom_size, x_off:x_off + zoom_size] = zoomed
+
+        cv2.putText(
+            display, "4x ZOOM", (x_off, y_off - 5),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2
+        )
+
     def _draw_ui(self, label: str, expected: tuple[float, float] | None) -> np.ndarray:
         """Draw the verification UI frame with overlay and instructions."""
         display = self.frame.copy()
+
+        # Draw crosshair at mouse position
+        cv2.line(display, (self.mouse_x - 20, self.mouse_y),
+                 (self.mouse_x + 20, self.mouse_y), (0, 255, 255), 1)
+        cv2.line(display, (self.mouse_x, self.mouse_y - 20),
+                 (self.mouse_x, self.mouse_y + 20), (0, 255, 255), 1)
 
         # Draw spiderweb overlay if enabled and mapper has homography
         if self.show_spiderweb:
@@ -226,6 +271,9 @@ class VerificationUI:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
             )
             y_offset += 22
+
+        # Draw zoom overlay last (on top of everything)
+        self._draw_zoom_overlay(display)
 
         return display
 
