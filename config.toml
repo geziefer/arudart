@@ -120,8 +120,14 @@ square_size_mm = 25.0  # Chessboard square size in millimeters
 
 # Multi-camera fusion configuration
 [fusion]
-outlier_threshold_mm = 50.0
-min_confidence = 0.3
+outlier_threshold_mm = 25.0       # tightened from 50.0
+pairwise_rejection_mm = 20.0      # new — for 2-camera case
+min_confidence = 0.3              # unchanged
+angular_falloff = 1.0             # new — cosine exponent
+[fusion.camera_anchors]
+cam0 = 81
+cam1 = 257
+cam2 = 153
 
 # Dartboard dimensions (Winmau Blade 6 specifications)
 [board]
