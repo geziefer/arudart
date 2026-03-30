@@ -71,7 +71,8 @@ class SectorDetector:
         #    Sector 20 is at 90 deg Cartesian. Sectors go clockwise, but
         #    Cartesian angles go counter-clockwise, so we negate:
         #      rotated = (90 - theta_deg) % 360
-        rotated = (90.0 - theta_deg) % 360.0
+        #    Offset by half a wedge so boundaries fall between sector centers.
+        rotated = (90.0 - theta_deg + self.wedge_width_deg / 2.0) % 360.0
 
         # 4. Determine wedge index (each wedge is 360/20 = 18 deg)
         wedge_index = int(rotated / self.wedge_width_deg)

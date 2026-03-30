@@ -63,11 +63,11 @@ class TestSector20AtTop:
         assert detector.determine_sector(math.radians(90.0)) == 20
 
     def test_sector_20_slightly_ccw_of_center(self) -> None:
-        """theta=95 deg is counter-clockwise from 90 deg.
-        rotated = (90 - 95) % 360 = 355 → wedge 19 → sector 5.
-        Sector 5 is the next sector counter-clockwise from 20."""
+        """theta=95 deg is counter-clockwise from 90 deg, still within sector 20.
+        With half-wedge offset, sector 20 spans [81, 99) Cartesian.
+        95 deg is inside that range → sector 20."""
         detector = SectorDetector(DEFAULT_CONFIG)
-        assert detector.determine_sector(math.radians(95.0)) == 5
+        assert detector.determine_sector(math.radians(95.0)) == 20
 
     def test_sector_20_slightly_cw_of_center(self) -> None:
         """theta=85 deg is clockwise from 90 deg, still in sector 20 wedge.
@@ -110,44 +110,36 @@ class TestSectorBoundaries:
     """
 
     def test_boundary_between_20_and_1(self) -> None:
-        """Boundary at Cartesian 72 deg (rotated=18).
-        Just above 72 → rotated < 18 → wedge 0 → sector 20.
-        Just below 72 → rotated > 18 → wedge 1 → sector 1."""
+        """Boundary between sector 20 and sector 1 is at Cartesian 81 deg.
+        Sector 20 center at 90, sector 1 center at 72, boundary at (90+72)/2 = 81.
+        Just above 81 → sector 20. Just below 81 → sector 1."""
         detector = SectorDetector(DEFAULT_CONFIG)
-        assert detector.determine_sector(math.radians(72.1)) == 20
-        assert detector.determine_sector(math.radians(71.9)) == 1
+        assert detector.determine_sector(math.radians(81.1)) == 20
+        assert detector.determine_sector(math.radians(80.9)) == 1
 
     def test_boundary_between_20_and_5(self) -> None:
-        """Boundary at Cartesian 99 deg (rotated = (90-99)%360 = 351 → 351/18 = 19.5).
-        Actually: wedge 19 boundary is at rotated=342. Cartesian = 90-342 = -252 → 108 deg.
-        So boundary between sector 5 (wedge 19) and sector 20 (wedge 0) is at 108 deg."""
+        """Boundary between sector 20 and sector 5 is at Cartesian 99 deg.
+        Sector 20 center at 90, sector 5 center at 108, boundary at (90+108)/2 = 99.
+        Just below 99 → sector 20. Just above 99 → sector 5."""
         detector = SectorDetector(DEFAULT_CONFIG)
-        # Just below 108 → rotated just above 342 → wedge 19 → sector 5
-        assert detector.determine_sector(math.radians(107.9)) == 5
-        # Just above 108 → rotated just below 342 → wedge 18 → sector 12
-        assert detector.determine_sector(math.radians(108.1)) == 12
+        assert detector.determine_sector(math.radians(98.9)) == 20
+        assert detector.determine_sector(math.radians(99.1)) == 5
 
     def test_boundary_between_6_and_13(self) -> None:
-        """Sector 6 at 0 deg (wedge 5), sector 13 at 18 deg (wedge 4).
-        Boundary at rotated=90, Cartesian=0 deg. Actually:
-        Wedge 4 spans rotated [72, 90) → Cartesian (0, 18].
-        Wedge 5 spans rotated [90, 108) → Cartesian (-18, 0] = (342, 360].
-        Boundary at Cartesian 0 deg (rotated=90)."""
+        """Sector 6 center at 0 deg, sector 13 center at 18 deg.
+        Boundary at 9 deg Cartesian.
+        Just below 9 → sector 6. Just above 9 → sector 13."""
         detector = SectorDetector(DEFAULT_CONFIG)
-        # 0.1 deg → rotated = 89.9 → wedge 4 → sector 13
-        assert detector.determine_sector(math.radians(0.1)) == 13
-        # 359.9 deg → rotated = (90 - 359.9) % 360 = 90.1 → wedge 5 → sector 6
-        assert detector.determine_sector(math.radians(359.9)) == 6
+        assert detector.determine_sector(math.radians(8.9)) == 6
+        assert detector.determine_sector(math.radians(9.1)) == 13
 
     def test_boundary_between_6_and_10(self) -> None:
-        """Sector 6 (wedge 5) and sector 10 (wedge 6).
-        Wedge 5 spans rotated [90, 108), wedge 6 spans [108, 126).
-        Boundary at rotated=108, Cartesian = 90-108 = -18 → 342 deg."""
+        """Sector 6 center at 0 deg, sector 10 center at 342 deg.
+        Boundary at 351 deg Cartesian.
+        Just above 351 → sector 6. Just below 351 → sector 10."""
         detector = SectorDetector(DEFAULT_CONFIG)
-        # 342.1 deg → rotated = (90-342.1)%360 = 107.9 → wedge 5 → sector 6
-        assert detector.determine_sector(math.radians(342.1)) == 6
-        # 341.9 deg → rotated = (90-341.9)%360 = 108.1 → wedge 6 → sector 10
-        assert detector.determine_sector(math.radians(341.9)) == 10
+        assert detector.determine_sector(math.radians(351.1)) == 6
+        assert detector.determine_sector(math.radians(350.9)) == 10
 
 
 class TestWireDetection:
@@ -187,11 +179,10 @@ class TestAngleWraparound:
         assert sector == 6
 
     def test_near_0_degrees(self) -> None:
-        """1 deg → rotated = 89 → wedge 4 → sector 13.
-        Sector 6 wedge spans Cartesian (342, 360], so 1 deg is in sector 13."""
+        """1 deg is within sector 6 (center at 0 deg, spans [-9, 9) = [351, 9))."""
         detector = SectorDetector(DEFAULT_CONFIG)
         sector = detector.determine_sector(math.radians(1.0))
-        assert sector == 13
+        assert sector == 6
 
     def test_zero_radians(self) -> None:
         """theta=0 rad (0 deg, +X axis) should be sector 6."""
@@ -217,7 +208,8 @@ class TestSectorOffset:
         assert detector.determine_sector(math.radians(90.0)) == 20
 
     def test_positive_offset_shifts_sectors(self) -> None:
-        """A +5 deg offset shifts the mapping: 90 deg now maps differently."""
+        """A +5 deg offset shifts the mapping: 90 deg now maps to sector 20 still
+        (5 deg is within the 9 deg half-width of sector 20's wedge)."""
         config = {
             "board": {
                 "sectors": {
@@ -227,9 +219,9 @@ class TestSectorOffset:
             }
         }
         detector = SectorDetector(config)
-        # With +5 offset, theta_deg becomes 95 deg.
-        # rotated = (90 - 95) % 360 = 355 deg → wedge 19 → sector 5
-        assert detector.determine_sector(math.radians(90.0)) == 5
+        # With +5 offset, effective angle = 95 deg.
+        # Sector 20 spans [81, 99) so 95 is still sector 20.
+        assert detector.determine_sector(math.radians(90.0)) == 20
 
     def test_negative_offset_shifts_sectors(self) -> None:
         """A -5 deg offset shifts the mapping."""
