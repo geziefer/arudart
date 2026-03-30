@@ -15,6 +15,8 @@ from src.calibration import CoordinateMapper, CalibrationManager, BoardGeometry
 from src.fusion import ScoreCalculator
 from src.diagnostics import DiagnosticLogger, AccuracyTestRunner
 from src.diagnostics.known_positions import build_known_positions
+from src.feedback.feedback_collector import FeedbackCollector
+from src.feedback.feedback_storage import FeedbackStorage
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -50,7 +52,8 @@ def draw_histogram(frame):
 
 def run_single_dart_test(camera_ids, camera_manager, motion_detector, background_model,
                          dart_detectors, coordinate_mapper, calibration_manager,
-                         score_calculator, session_dir, config, logger, diagnostic_logger=None):
+                         score_calculator, session_dir, config, logger, diagnostic_logger=None,
+                         feedback_collector=None, feedback_storage=None):
     """Timed single-dart test loop.
 
     Cycle:
@@ -225,6 +228,13 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
                         # Log to diagnostics if enabled
                         if diagnostic_logger is not None:
                             diagnostic_logger.log_detection(event)
+
+                        # Collect feedback if feedback mode is enabled
+                        if feedback_collector is not None:
+                            feedback_data = feedback_collector.collect_feedback(event, image_paths)
+                            if feedback_data is not None and feedback_storage is not None:
+                                feedback_id = feedback_storage.save_feedback(feedback_data)
+                                logger.info(f"Feedback saved: {feedback_id}")
                     else:
                         last_score_text = "Fusion failed"
                 else:
@@ -290,7 +300,8 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
 
 def run_manual_dart_test(camera_ids, camera_manager, background_model,
                          dart_detectors, coordinate_mapper, calibration_manager,
-                         score_calculator, session_dir, config, logger, diagnostic_logger=None):
+                         score_calculator, session_dir, config, logger, diagnostic_logger=None,
+                         feedback_collector=None, feedback_storage=None):
     """Manual single-dart test loop with fixed countdown (no motion detection).
 
     Cycle:
@@ -452,6 +463,13 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
                         # Log to diagnostics if enabled
                         if diagnostic_logger is not None:
                             diagnostic_logger.log_detection(event)
+
+                        # Collect feedback if feedback mode is enabled
+                        if feedback_collector is not None:
+                            feedback_data = feedback_collector.collect_feedback(event, image_paths)
+                            if feedback_data is not None and feedback_storage is not None:
+                                feedback_id = feedback_storage.save_feedback(feedback_data)
+                                logger.info(f"Feedback saved: {feedback_id}")
                     else:
                         last_score_text = "Fusion failed"
                 else:
@@ -791,6 +809,7 @@ def main():
     parser.add_argument('--accuracy-test', action='store_true', help='Run accuracy test mode (implies --diagnostics)')
     parser.add_argument('--ring', type=str, choices=['T', 'D', 'BS', 'SS'],
                         help='Ring filter for accuracy test: T=triple, D=double, BS=big single, SS=small single. Tests all 20 sectors for that ring.')
+    parser.add_argument('--feedback-mode', action='store_true', help='Enable feedback collection mode')
     args = parser.parse_args()
 
     # --accuracy-test implies --diagnostics
@@ -881,6 +900,14 @@ def main():
     score_calculator = ScoreCalculator(config)
     logger.info("Score calculator initialized")
 
+    # Initialize feedback system if --feedback-mode is enabled
+    feedback_collector = None
+    feedback_storage = None
+    if args.feedback_mode:
+        feedback_storage = FeedbackStorage()
+        feedback_collector = FeedbackCollector()
+        logger.info("Feedback mode enabled")
+
     # Initialize calibration manager
     calibration_manager = CalibrationManager(config, coordinate_mapper)
     board_geometry = BoardGeometry()
@@ -970,7 +997,9 @@ def main():
                 camera_ids, camera_manager, motion_detector, background_model,
                 dart_detectors, coordinate_mapper, calibration_manager,
                 score_calculator, session_dir, config, logger,
-                diagnostic_logger=diagnostic_logger
+                diagnostic_logger=diagnostic_logger,
+                feedback_collector=feedback_collector,
+                feedback_storage=feedback_storage
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -1013,7 +1042,9 @@ def main():
                 camera_ids, camera_manager, background_model,
                 dart_detectors, coordinate_mapper, calibration_manager,
                 score_calculator, session_dir, config, logger,
-                diagnostic_logger=diagnostic_logger
+                diagnostic_logger=diagnostic_logger,
+                feedback_collector=feedback_collector,
+                feedback_storage=feedback_storage
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
