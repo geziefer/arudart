@@ -194,4 +194,4 @@ class TestExportReport:
             assert "Overall Accuracy: 80.0%" in content
             assert "Total Throws: 10" in content
             assert "Sector 20: 90.0%" in content
-            assert "T20 detected as S20: 2 occurrences" in content
+            assert "T20 detected, actually S20: 2 occurrences" in content

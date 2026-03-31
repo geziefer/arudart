@@ -151,6 +151,9 @@ class AccuracyAnalyzer:
                 continue
             detected = _score_dict_to_label(fb.get("detected_score", {}))
             actual = _score_dict_to_label(fb.get("actual_score", {}))
+            # When user marked wrong but no actual score entered, actual == detected
+            if detected == actual:
+                actual = "unknown"
             counter[(detected, actual)] += 1
 
         return [
@@ -212,7 +215,10 @@ class AccuracyAnalyzer:
             lines.append(f"Top {len(failure_modes)} Failure Modes")
             lines.append("-" * 20)
             for i, (det, act, cnt) in enumerate(failure_modes, 1):
-                lines.append(f"{i}. {det} detected as {act}: {cnt} occurrences")
+                if act == "unknown":
+                    lines.append(f"{i}. {det} marked incorrect (actual unknown): {cnt} occurrences")
+                else:
+                    lines.append(f"{i}. {det} detected, actually {act}: {cnt} occurrences")
             lines.append("")
 
         path.write_text("\n".join(lines))
