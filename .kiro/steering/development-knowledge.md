@@ -15,7 +15,8 @@ inclusion: always
 ### Detection Thresholds
 
 ❌ **NEVER use very low diff threshold (5)** - captures massive board noise
-✅ **Use moderate threshold (15)**: Filters noise, keeps dart signal (20-50px difference)
+❌ **Threshold 15 too low for live throws** - sensor noise creates thousands of false contours
+✅ **Use threshold 25**: Better signal-to-noise ratio for thrown darts (raised from 15)
 ✅ **Shape-based scoring**: `score = area × aspect_ratio × (1 - circularity)`
 
 ### Tip Identification
@@ -37,6 +38,27 @@ inclusion: always
 - **At least 2/3 detection rate**: 75% of throws should have ≥2 cameras
 - **Tip position error systematic**: 20-30px offset, correctable by fusion
 - **Previous dart masking disabled**: In multi-camera mode, fusion handles duplicates
+
+### Dart Flight Color
+
+❌ **Black flights** - blend with dark board areas, weak diff signal, causes false contour selection
+✅ **Colored/bright flights** - strong contrast in image differencing, dramatically improves detection
+- Switching from black to colored flights improved live throw accuracy from 54% to 94%
+
+### Camera-Specific Issues
+
+- **cam1 light ring**: cam1 (lower right) has the LED light ring visible in its upper portion (~88 rows)
+- The bright light ring area creates noise in image differencing
+- **Auto-masked**: DartDetector automatically detects and masks bright rows (mean > 100) in the top quarter
+- **cam1 sensor noise**: cam1 has higher frame-to-frame noise than cam0/cam2 (likely due to lower exposure)
+
+### Live Throw vs Manual Placement
+
+- **Manual placement**: 100% accuracy (clean pre/post frames, no motion artifacts)
+- **Live throws**: ~94% accuracy with colored flights (was 54% with black flights)
+- Key difference: live throws have sensor noise, camera vibration from impact, and the dart in flight
+- The Canny edge detection OR step in dart_detection.py adds board edges that create false contours — considered for removal but kept for now
+- **persistent_change stays True** while dart is in board — state machine must suppress motion during settling
 
 ## Code Patterns
 
@@ -113,17 +135,30 @@ cam2 = { exposure_time_ms = 3.5, contrast = 30, gamma = 380 }
 ### Detection Parameters
 ```toml
 [dart_detection]
-diff_threshold = 15        # High threshold (try first)
+diff_threshold = 25        # Raised from 15 — reduces sensor noise for live throws
 blur_kernel = 3
 min_dart_area = 50
 max_dart_area = 10000
 min_shaft_length = 15
-aspect_ratio_min = 1.2
+aspect_ratio_min = 1.0     # Lowered from 1.2
 
 [dart_detection.per_camera]
 cam0 = { diff_threshold = 8 }  # Low threshold fallback
 cam1 = { diff_threshold = 8 }
 cam2 = { diff_threshold = 8 }
+```
+
+### Fusion Parameters
+```toml
+[fusion]
+outlier_threshold_mm = 25.0       # Tightened from 50.0
+pairwise_rejection_mm = 20.0      # For 2-camera case
+min_confidence = 0.3
+angular_falloff = 1.0             # Cosine-based angular weighting
+[fusion.camera_anchors]
+cam0 = 81    # degrees
+cam1 = 257
+cam2 = 153
 ```
 
 ### Shape Filters
@@ -133,7 +168,54 @@ cam2 = { diff_threshold = 8 }
 
 ## Testing Workflow
 
-### Manual Testing Mode
+### Manual Placement Mode (place dart by hand)
+```bash
+python main.py --manual-dart-test --dev-mode
+```
+Cycle: stabilize → "PUT IN NOW" countdown → detect → show result → "REMOVE DART" → repeat
+
+### Throw Mode (motion-detected single darts)
+```bash
+python main.py --single-dart-test --dev-mode
+```
+Cycle: stabilize → "THROW NOW" → wait for motion → detect → show result → repeat
+
+### State Machine Mode (3-dart rounds with pull-out)
+```bash
+python main.py --state-machine --dev-mode
+```
+Full game cycle: WaitForThrow → ThrowDetected → score displayed → 3 darts → ThrowFinished → pull out → 2s cooldown → next round
+
+### Accuracy Test Mode (known positions)
+```bash
+# Original 14-position set (DB, SB, T/D/BS/SS for sectors 20, 1, 5)
+python main.py --accuracy-test --dev-mode
+
+# Per-ring test (all 20 sectors)
+python main.py --accuracy-test --ring T --dev-mode   # Triples
+python main.py --accuracy-test --ring D --dev-mode   # Doubles
+python main.py --accuracy-test --ring BS --dev-mode  # Big singles
+python main.py --accuracy-test --ring SS --dev-mode  # Small singles
+```
+
+### Feedback Mode (confirm/correct scores)
+```bash
+# With manual placement
+python main.py --manual-dart-test --feedback-mode --dev-mode
+
+# With thrown darts
+python main.py --single-dart-test --feedback-mode --dev-mode
+```
+After each detection: shows score + "Correct? (y)es / (n)o" on CV window
+
+### Feedback Analysis Scripts
+```bash
+PYTHONPATH=. python scripts/analyze_feedback.py        # Accuracy report
+PYTHONPATH=. python scripts/generate_heatmaps.py       # Heatmap images
+PYTHONPATH=. python scripts/export_dataset.py           # ML dataset CSV
+```
+
+### Manual Testing Mode (legacy)
 ```bash
 python main.py --dev-mode --manual-test
 ```
@@ -155,12 +237,37 @@ python main.py --dev-mode --record-mode
 4. Type description (e.g., "T20")
 5. Repeat for next recording
 
+### All CLI Flags Reference
+```
+--config PATH          Config file (default: config.toml)
+--dev-mode             Enable preview windows
+--manual-test          Legacy manual test (pause/place/detect)
+--record-mode          Capture images for regression tests
+--single-camera N      Test single camera (0, 1, or 2)
+--calibrate            Run manual calibration at startup
+--calibrate-intrinsic  Run chessboard calibration
+--verify-calibration   Run calibration verification
+--single-dart-test     Throw mode (motion-detected)
+--manual-dart-test     Manual placement mode (countdown)
+--state-machine        3-dart round mode with pull-out
+--diagnostics          Enable diagnostic JSON logging
+--accuracy-test        Accuracy test against known positions
+--ring T|D|BS|SS       Ring filter for accuracy test
+--feedback-mode        Enable score confirmation UI
+```
+
 ## Performance Metrics
 
-- **Detection Rate**: 94% (single-camera), 88% (multi-camera)
-- **Tip Accuracy**: >90% (correct end identified)
+- **Manual placement accuracy**: 100% (20/20 throws, all rings)
+- **Live throw accuracy**: 94% (17/18 throws with colored flights)
+- **Per-ring accuracy (manual, all 20 sectors)**:
+  - Triples: 100% (20/20), mean error 2.4mm
+  - Big singles: 100% (20/20), mean error 5.6mm
+  - Small singles: 100% (20/20), mean error 13.2mm
+  - Doubles: 80% (16/20), mean error 13.8mm — hardest ring (board edge)
+- **Camera coverage**: 44% 3-camera, 33% 2-camera, 22% 1-camera (live throws)
 - **Processing Time**: ~50-100ms per detection
-- **Multi-camera Coverage**: 100% (≥1 camera), 75% (≥2 cameras)
+- **Fusion improvements**: Pairwise rejection (20mm), angular weighting, 25mm outlier threshold
 
 ## Common Issues & Solutions
 
@@ -175,6 +282,21 @@ python main.py --dev-mode --record-mode
 
 ### Issue: Board noise larger than dart
 **Solution**: Shape-based scoring instead of size-based selection
+
+### Issue: Black flights invisible on dark board areas
+**Solution**: Use colored/bright flights — improved live accuracy from 54% to 94%
+
+### Issue: cam1 light ring creates noise
+**Solution**: Auto-masking of bright rows in DartDetector (rows with mean > 100 excluded)
+
+### Issue: Doubles ring boundary precision (170mm board edge)
+**Solution**: No tolerance buffer added (would cause false doubles). Accept ~80% accuracy on doubles.
+
+### Issue: False throw detection after pull-out
+**Solution**: 2s cooldown after pull-out with continuous background updates during cooldown
+
+### Issue: State machine settling — persistent_change stays True while dart in board
+**Solution**: Suppress motion_detected while in ThrowDetected and PullOutStarted states
 
 
 ## Step 6: Coordinate Mapping - Feature Detection Success
@@ -242,7 +364,14 @@ Verification script tested 13 known board points per camera (bull, T20, T1, T5, 
 **CLI flags added**:
 - `--calibrate`: Run manual calibration before main loop
 - `--calibrate-intrinsic`: Run intrinsic (chessboard) calibration
-- `--verify-calibration`: Run verification script
+- `--verify-calibration`: Run calibration verification
+- `--single-dart-test`: Throw mode (motion-detected single darts)
+- `--manual-dart-test`: Manual placement mode (countdown-based)
+- `--state-machine`: 3-dart round mode with pull-out detection
+- `--accuracy-test`: Test against known board positions
+- `--ring T|D|BS|SS`: Filter accuracy test by ring type (all 20 sectors)
+- `--feedback-mode`: Enable score confirmation UI (y/n in CV window)
+- `--diagnostics`: Enable per-throw JSON diagnostic logging
 
 **Keyboard shortcuts in dev mode**:
 - `c`: Trigger manual calibration, reload coordinate mapper

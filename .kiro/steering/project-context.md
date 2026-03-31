@@ -33,12 +33,17 @@ Example: BS20 = Big Single 20 (outer single area of sector 20)
 ## Current Status (Phase 1 - POC)
 
 - ✅ Steps 0-5.5 complete: Multi-camera detection + regression testing
-- 📋 Steps 6-10 planned: Calibration, fusion, state machine, API, validation
+- ✅ Step 6 complete: Coordinate mapping + calibration (100% bull detection, <5mm avg error)
+- ✅ Step 7 complete: Multi-camera fusion + scoring (pairwise rejection, angular weighting)
+- ✅ Step 7.1 complete: Fusion accuracy improvements (25mm threshold, angular proximity)
+- ✅ Step 7.5 complete: Human feedback system (score parser, storage, analysis, heatmaps, dataset export)
+- ✅ Step 8 complete: Event state machine (3-dart rounds, throw/pull-out lifecycle)
+- 📋 Steps 9-10 planned: API, validation
 
-### Regression Test Baseline (Step 5.5)
-- **Detection rate**: 90% (18/20 throws detected)
-- **Confirmed rate**: 75% (≥2 cameras agree)
-- **Pixel accuracy**: ~0.8mm per pixel at 800×600
+### Accuracy Results
+- **Manual placement**: 100% across all rings (T, BS, SS), 80% doubles
+- **Live throws (colored flights)**: 94% accuracy (17/18 correct)
+- **Live throws (black flights)**: 54% accuracy — black flights not recommended
 
 ## Technology Stack
 

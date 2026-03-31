@@ -1,258 +1,157 @@
-# arudart
-Autoscoring Recognition Unit for Darts
+# ARU-DART
 
-A darts autoscoring system for my home setup with 3 cameras mounted on LED ring on stelldart board.
+Automatic Recognition Unit for Darts — an autoscoring system using 3 USB cameras mounted on an LED ring around a steel-tip dartboard.
 
-Development is supported heavily by Amazon Kiro.
+Development supported by Amazon Kiro.
 
----
+## Hardware Setup
+
+- Winmau Blade 6 Triple Core board (standard 17" diameter)
+- 3 OV9732 USB cameras at 120° intervals (800×600, MJPG)
+- LED ring for stable illumination
+- Raspberry Pi 4 (or macOS for development)
+- Colored dart flights recommended (black flights reduce detection accuracy)
+
+## Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run 3-dart game mode (recommended)
+python main.py --state-machine --dev-mode
+
+# Run single-dart throw mode
+python main.py --single-dart-test --dev-mode
+
+# Run manual placement mode
+python main.py --manual-dart-test --dev-mode
+```
+
+## Game Modes
+
+### State Machine Mode (3-dart rounds)
+```bash
+python main.py --state-machine --dev-mode
+```
+Full game cycle: throw 3 darts → scores displayed → pull out darts → 2s cooldown → next round. Detects dart impacts via motion, scores each throw, counts to 3, then waits for pull-out before resetting.
+
+### Single Dart Test (thrown darts)
+```bash
+python main.py --single-dart-test --dev-mode
+```
+Throw a dart, system detects impact and scores it. Remove dart, system resets background, ready for next throw. One dart at a time.
+
+### Manual Dart Test (place by hand)
+```bash
+python main.py --manual-dart-test --dev-mode
+```
+Timed cycle: stabilize → "PUT IN NOW" (7s countdown) → detect → show result → "REMOVE DART" → repeat. For testing without throwing.
+
+
+## Accuracy Testing
+
+### Known Position Test
+```bash
+# Original 14-position set (DB, SB, T/D/BS/SS for sectors 20, 1, 5)
+python main.py --accuracy-test --dev-mode
+
+# Per-ring test across all 20 sectors
+python main.py --accuracy-test --ring T --dev-mode   # Triples
+python main.py --accuracy-test --ring D --dev-mode   # Doubles
+python main.py --accuracy-test --ring BS --dev-mode  # Big singles
+python main.py --accuracy-test --ring SS --dev-mode  # Small singles
+```
+Guides you through placing darts at specific board positions, compares detected vs expected scores, generates accuracy report.
+
+### Feedback Mode (score confirmation)
+```bash
+python main.py --single-dart-test --feedback-mode --dev-mode
+python main.py --manual-dart-test --feedback-mode --dev-mode
+```
+After each detection, shows score on screen with "Correct? (y)es / (n)o". Press y/n in the camera window. Feedback stored in `data/feedback/correct/` and `data/feedback/incorrect/`.
+
+### Feedback Analysis
+```bash
+PYTHONPATH=. python scripts/analyze_feedback.py        # Accuracy report
+PYTHONPATH=. python scripts/generate_heatmaps.py       # Board heatmap images
+PYTHONPATH=. python scripts/export_dataset.py           # ML training dataset CSV
+```
+
+## Calibration
+
+```bash
+python main.py --calibrate --dev-mode              # Manual calibration
+python main.py --calibrate-intrinsic --dev-mode    # Chessboard intrinsic calibration
+python main.py --verify-calibration --dev-mode     # Verify calibration accuracy
+```
+
+Keyboard shortcuts in dev mode:
+- `c` — trigger manual calibration
+- `v` — toggle spiderweb overlay (projected board grid)
+
+## All CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--config PATH` | Config file (default: config.toml) |
+| `--dev-mode` | Enable camera preview windows |
+| `--state-machine` | 3-dart round mode with pull-out detection |
+| `--single-dart-test` | Single dart throw mode (motion-detected) |
+| `--manual-dart-test` | Manual placement mode (countdown-based) |
+| `--accuracy-test` | Test against known board positions |
+| `--ring T\|D\|BS\|SS` | Ring filter for accuracy test |
+| `--feedback-mode` | Enable score confirmation UI |
+| `--diagnostics` | Enable per-throw JSON logging |
+| `--calibrate` | Run manual calibration at startup |
+| `--calibrate-intrinsic` | Run chessboard calibration |
+| `--verify-calibration` | Run calibration verification |
+| `--manual-test` | Legacy manual test (pause/place/detect) |
+| `--record-mode` | Capture images for regression tests |
+| `--single-camera N` | Test single camera (0, 1, or 2) |
+| `--show-histogram` | Show RGB histogram overlay |
+
+## Accuracy Results
+
+| Ring | Manual Placement | Live Throws (colored flights) |
+|------|-----------------|-------------------------------|
+| Triples | 100% (20/20) | ~94% |
+| Big Singles | 100% (20/20) | ~94% |
+| Small Singles | 100% (20/20) | ~94% |
+| Doubles | 80% (16/20) | ~80% |
+| Bulls | 100% | 100% |
+
+Doubles are the hardest ring — at the 170mm board edge where sub-mm calibration precision matters most.
+
+## Project Structure
+
+```
+src/
+├── calibration/          # Coordinate mapping, board geometry
+├── camera/               # Camera management
+├── processing/           # Motion detection, dart detection, background model
+├── fusion/               # Multi-camera fusion, scoring, dart hit events
+├── state_machine/        # Throw lifecycle (3-dart rounds, pull-out)
+├── feedback/             # Score parser, feedback collection, storage
+├── analysis/             # Accuracy analyzer, heatmaps, dataset export
+├── diagnostics/          # Diagnostic logging, accuracy test runner
+└── util/                 # Logging, metrics
+
+scripts/
+├── analyze_feedback.py   # Generate accuracy report from feedback data
+├── generate_heatmaps.py  # Generate board accuracy heatmaps
+└── export_dataset.py     # Export verified dataset for ML training
+
+tests/                    # Unit tests + property-based tests (hypothesis)
+data/
+├── feedback/             # Feedback storage (correct/incorrect)
+├── diagnostics/          # Per-session diagnostic data
+├── throws/               # Per-session throw images
+└── recordings/           # Regression test recordings
+```
 
 ## Documentation
 
-- **[Project Overview](project.md)** - System architecture and requirements
-- **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Step-by-step development plan and progress
-- **[Testing Plan](TESTING_PLAN.md)** - Test cases and validation procedures
-- **[Development Knowledge](DEVELOPMENT_KNOWLEDGE.md)** - Code structure and technical details
-- **[Lessons Learned](LESSONS_LEARNED.md)** - Key insights and design decisions
-
----
-
-## Usage
-
-### Normal Operation Mode (Automatic Detection)
-
-Runs continuous dart detection with motion-based triggering:
-
-```bash
-python main.py --dev-mode
-```
-
-**Features:**
-- Automatic background initialization (2 seconds after startup)
-- Motion detection triggers dart detection
-- Saves annotated images per throw
-- Multi-camera detection (all 3 cameras)
-
-**Controls:**
-- `r` - Reset background (after removing darts)
-- `q` - Quit
-
----
-
-### Manual Testing Mode
-
-Controlled testing with pause/play for precise dart placement:
-
-```bash
-python main.py --dev-mode --manual-test
-```
-
-**Workflow:**
-1. Press `p` to pause
-2. Place dart manually
-3. Press `p` again to trigger detection
-4. Remove dart, press `r` to reset
-5. Repeat
-
-**Use cases:**
-- Test specific dart positions
-- Validate detection accuracy
-- Run test cases (TC0-TC6)
-
----
-
-### Recording Mode (Regression Test Dataset)
-
-Capture raw image pairs (pre+post) for regression testing without running detection:
-
-```bash
-python main.py --dev-mode --record-mode
-```
-
-**Workflow:**
-1. Press `r` to capture PRE frame (clean board)
-2. Place dart on board
-3. Press `c` to capture POST frame (with dart)
-4. Type description in console (e.g., "T20", "bull", "two_darts_crossing")
-5. Press Enter to save
-6. Repeat for next recording (auto-increments to #002, #003, etc.)
-
-**Output:**
-- Images saved to `data/recordings/`
-- Naming format: `{number}_cam{0,1,2}_{pre|post}_{description}.jpg`
-- Example:
-  - `001_cam0_pre_T20.jpg`
-  - `001_cam0_post_T20.jpg`
-  - `001_cam1_pre_T20.jpg`
-  - `001_cam1_post_T20.jpg`
-  - `001_cam2_pre_T20.jpg`
-  - `001_cam2_post_T20.jpg`
-
-**Next Steps:**
-- Annotate tip positions: `python tools/annotate_ground_truth.py`
-- Run regression tests: `python tools/run_regression_tests.py`
-
-**Why pre/post pairs:** Regression tests use image differencing (same as production detection), accounting for lighting changes over time.
-
-**Next steps:**
-1. **Annotate ground truth:** `python tools/annotate_ground_truth.py`
-2. **Run regression tests:** `python tools/run_regression_tests.py`
-
----
-
-### Regression Testing
-
-After recording and annotating images, run automated regression tests:
-
-```bash
-# Run with default tolerance (10 pixels)
-python tools/run_regression_tests.py
-
-# Run with custom tolerance
-python tools/run_regression_tests.py --tolerance 20
-```
-
-**Options:**
-- `--tolerance PIXELS` - Position error tolerance in pixels (default: 10)
-  - 10px: Strict (2-3mm on board)
-  - 20px: Moderate (4-6mm on board)
-  - 30px: Loose (7-9mm on board)
-
-**Prerequisites:**
-- Annotated ground truth files in `data/testimages/` (`.json` for each POST image)
-- Paired pre/post images in `data/testimages/`:
-  - `001_cam0_BS1_pre.jpg` - Clean board
-  - `001_cam0_BS1_post.jpg` - With dart (annotated)
-  - `001_cam0_BS1_post.json` - Ground truth
-
-**Directory structure:**
-```
-data/
-├── recordings/           # Working directory (recording + annotation)
-│   ├── 001_cam0_BS1_pre.jpg
-│   ├── 001_cam0_BS1_post.jpg
-│   ├── 001_cam0_BS1_post.json
-│   └── ...
-└── testimages/           # Test dataset (organized, ready for regression tests)
-    ├── 001_cam0_BS1_pre.jpg
-    ├── 001_cam0_BS1_post.jpg
-    ├── 001_cam0_BS1_post.json
-    └── ...
-```
-
-**What it does:**
-1. Loads pre-images (clean board) for each camera
-2. For each test image:
-   - Runs detection (pre-image + test image)
-   - Compares detected tip with ground truth
-   - Reports pass/fail (10px tolerance)
-3. Generates summary statistics:
-   - Overall pass rate
-   - Per-camera pass rate
-   - Per-ring pass rate (BS, SS, D, T, SB, DB)
-
-**Output:**
-- Console: Real-time test results
-- `tests/regression_report.txt`: Summary report
-
-**Use cases:**
-- Verify detection quality after code changes
-- Catch regressions before committing
-- Measure detection accuracy per sector type
-- Baseline for future optimizations
-
----
-
-### Annotation Tool (Ground Truth Creation)
-
-After recording images, annotate dart tip positions for regression testing:
-
-```bash
-python tools/annotate_ground_truth.py
-```
-
-**Workflow:**
-1. Tool displays first unannotated image
-2. Click on dart tip position
-3. Press `s` to save annotation
-4. Automatically moves to next camera (cam0 → cam1 → cam2)
-5. Repeats for all recordings
-
-**Controls:**
-- **Click** - Mark tip position (shows green circle)
-- `s` - Save annotation and continue
-- `n` - Skip image (no dart visible in this camera)
-- `q` - Quit annotation session
-
-**Output:**
-- Creates JSON file for each image: `001_cam0_BS_20.json`
-- Format:
-  ```json
-  {
-    "image": "001_cam0_BS_20.jpg",
-    "tip_x": 450,
-    "tip_y": 280,
-    "description": "BS_20",
-    "expected_ring": "BS",
-    "expected_number": 20
-  }
-  ```
-- Automatically parses sector from filename (BS_20, T_19, SB, DB, etc.)
-
-**Supported sector formats:**
-- `BS_<number>` - Big Single (1-20)
-- `SS_<number>` - Small Single (1-20)
-- `D_<number>` - Double (1-20)
-- `T_<number>` - Triple (1-20)
-- `SB` or `SB_<direction>` - Single Bull (25)
-- `DB` - Double Bull (50)
-
-**Features:**
-- Shows crosshair at mouse position for precision
-- Groups images by recording number (annotate all 3 cameras of same throw together)
-- Skips already-annotated images
-- Progress tracking (shows count of annotated/skipped)
-
----
-
-### Single-Camera Testing Mode
-
-Test individual cameras before multi-camera fusion:
-
-```bash
-python main.py --dev-mode --manual-test --single-camera 0  # Test cam0
-python main.py --dev-mode --manual-test --single-camera 1  # Test cam1
-python main.py --dev-mode --manual-test --single-camera 2  # Test cam2
-```
-
-**Use cases:**
-- Per-camera exposure/contrast tuning
-- Validate detection on each camera independently
-- Debug camera-specific issues
-
----
-
-### Additional Options
-
-**Show histogram:**
-```bash
-python main.py --dev-mode --show-histogram
-```
-- Displays RGB histogram overlay
-- Useful for verifying exposure settings
-
-**Custom config:**
-```bash
-python main.py --config custom_config.toml
-```
-- Load alternative configuration file
-
----
-
-## Backend (Phase 1)
-Python based system for image capturing and processing for detecting dart scores.
-
-**Current Status:** Step 5 complete (multi-camera detection), Step 5.5 in progress (regression tests)
-
-## Frontend (Phase 2)
-Connect existing Flutter based App to backend for using darts as alternative input for local games.
+- `.kiro/steering/project-context.md` — Project overview and current status
+- `.kiro/steering/development-knowledge.md` — Lessons learned, tuned parameters, CLI reference
+- `.kiro/specs/` — Spec-driven development documents (requirements, design, tasks per step)
