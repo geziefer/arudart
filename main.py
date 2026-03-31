@@ -136,7 +136,7 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
 
         elif state == "detected":
             # Capture post frames and run detection
-            time.sleep(0.3)  # Brief settle
+            time.sleep(0.5)  # Wait for dart flight to settle after impact
             for camera_id in camera_ids:
                 frame = camera_manager.get_latest_frame(camera_id)
                 if frame is not None:

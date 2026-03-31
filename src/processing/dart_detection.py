@@ -92,7 +92,17 @@ class DartDetector:
             valid_radius = int(min(w, h) * 0.425)  # 85% of half-width
             cv2.circle(self.board_mask, center, valid_radius, 255, -1)
             # Bull is included (no inner exclusion)
-            self.logger.info(f"Created board mask: valid_radius={valid_radius} (excludes outer numbers only)")
+            
+            # Exclude bright rows (light ring visible in some cameras)
+            # Scan from top: if a row's mean brightness > 100, mask it out
+            for row in range(h // 4):  # Only check top quarter
+                if np.mean(pre_gray[row, :]) > 100:
+                    self.board_mask[row, :] = 0
+                else:
+                    break  # Stop at first dark row
+            
+            masked_rows = sum(1 for r in range(h // 4) if np.all(self.board_mask[r, :] == 0))
+            self.logger.info(f"Created board mask: valid_radius={valid_radius}, bright_rows_excluded={masked_rows}")
         
         # Apply spatial mask to exclude board features
         thresh = cv2.bitwise_and(thresh, thresh, mask=self.board_mask)
