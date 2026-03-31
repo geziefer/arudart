@@ -887,6 +887,7 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
     background_initialized = False
     start_time = time.time()
     last_score_text = ""
+    pull_out_cooldown_until = 0.0  # Ignore motion until this time after pull-out
 
     while True:
         current_time = time.time()
@@ -915,6 +916,14 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                 frames, current_time
             )
 
+            # Suppress motion during post-pull-out cooldown
+            if current_time < pull_out_cooldown_until:
+                persistent_change = False
+                # Keep updating background during cooldown so it's fresh when cooldown ends
+                for camera_id, frame in frames.items():
+                    motion_detector.update_background(camera_id, frame)
+                    background_model.update_pre_impact(camera_id, frame)
+
             # Map motion detector output to state machine input.
             # persistent_change from the motion detector already distinguishes
             # dart impact (persistent change) from transient noise.
@@ -926,11 +935,19 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                 # Only signal dart motion if NOT already in ThrowDetected
                 # (persistent_change stays True while dart is in board,
                 # but we don't want to keep resetting the settling timer)
-                if state_machine.current_state != State.ThrowDetected:
-                    motion_data = {"speed": 600.0, "size": 50.0, "duration": 100.0}
-                else:
+                if state_machine.current_state == State.ThrowDetected:
                     motion_data = {"speed": 0.0, "size": 0.0, "duration": 0.0}
                     persistent_change = False  # Don't signal motion while settling
+                elif state_machine.current_state == State.ThrowFinished:
+                    # After 3 darts, any motion is hand motion (start pull-out)
+                    motion_data = {"speed": 100.0, "size": 800.0, "duration": 700.0}
+                elif state_machine.current_state == State.PullOutStarted:
+                    # During pull-out, suppress motion so settling can happen
+                    motion_data = {"speed": 0.0, "size": 0.0, "duration": 0.0}
+                    persistent_change = False
+                else:
+                    # WaitForThrow: treat as dart motion
+                    motion_data = {"speed": 600.0, "size": 50.0, "duration": 100.0}
             else:
                 motion_data = {"speed": 0.0, "size": 0.0, "duration": 0.0}
 
@@ -983,6 +1000,15 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                 # Reset detection flag when not in ThrowDetected
                 state_machine._detection_done = False
 
+            # Handle pull-out: when in PullOutStarted and no motion,
+            # tell the state machine all darts are removed and update background
+            if state_machine.current_state == State.PullOutStarted and not persistent_change:
+                motion_data["remaining_dart_positions"] = []
+                # Update background after pull-out settles
+                for camera_id, frame in frames.items():
+                    motion_detector.update_background(camera_id, frame)
+                    background_model.update_pre_impact(camera_id, frame)
+
             # Process state machine.
             # When we have a detection result ready, tell the state machine
             # motion has settled (False) so it processes the detection.
@@ -1012,6 +1038,10 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                     logger.info(f"DartRemovedEvent: removed={event.count_removed}, "
                                 f"remaining={event.count_remaining}")
                     last_score_text = ""
+                    if event.count_remaining == 0:
+                        # All darts removed — cooldown 2s before accepting new throws
+                        pull_out_cooldown_until = current_time + 2.0
+                        logger.info("Pull-out complete, cooldown 2s before next round")
                 elif isinstance(event, DartBounceOutEvent):
                     logger.info(f"DartBounceOutEvent: dart_id={event.dart_id}")
                 elif isinstance(event, ThrowMissEvent):
@@ -1034,8 +1064,8 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             if last_score_text:
-                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                cv2.putText(display, last_score_text, (w // 2 - 200, h - 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 255, 255), 4)
 
             cv2.imshow(f"Camera {camera_id}", display)
 
