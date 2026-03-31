@@ -18,6 +18,8 @@ from src.diagnostics.known_positions import build_known_positions
 from src.feedback.feedback_collector import FeedbackCollector, score_to_display_string, score_to_parsed_score
 from src.feedback.feedback_storage import FeedbackStorage
 from src.feedback.score_parser import ScoreParser
+from src.state_machine.throw_state_machine import ThrowStateMachine
+from src.state_machine.events import State, DartRemovedEvent, DartBounceOutEvent, ThrowMissEvent
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -865,6 +867,185 @@ def run_accuracy_test(camera_ids, camera_manager, background_model,
     cv2.destroyAllWindows()
 
 
+def run_state_machine_mode(camera_ids, camera_manager, motion_detector, background_model,
+                           dart_detectors, coordinate_mapper, score_calculator,
+                           state_machine, config, logger):
+    """Run the state machine mode for throw lifecycle management.
+
+    Initializes cameras and background, then runs a main loop that:
+    - Detects motion and classifies it
+    - Feeds events into the ThrowStateMachine
+    - Handles emitted events (DartHitEvent, DartRemovedEvent, etc.)
+    - Displays current state on CV window
+    """
+    from src.fusion.dart_hit_event import DartHitEvent
+
+    logger.info("=== STATE MACHINE MODE ===")
+    logger.info("Press 'q' or ESC to quit")
+
+    # Initialize background
+    background_initialized = False
+    start_time = time.time()
+    last_score_text = ""
+
+    while True:
+        current_time = time.time()
+
+        # Get frames from all cameras
+        frames = {}
+        for camera_id in camera_ids:
+            frame = camera_manager.get_latest_frame(camera_id)
+            if frame is not None:
+                frames[camera_id] = frame
+
+        # Initialize background after cameras stabilize
+        if not background_initialized and len(frames) == len(camera_ids):
+            if current_time - start_time > 2.0:
+                logger.info("Auto-initializing background...")
+                for camera_id, frame in frames.items():
+                    motion_detector.update_background(camera_id, frame)
+                    background_model.update_pre_impact(camera_id, frame)
+                background_initialized = True
+                logger.info("Background captured - state machine ready")
+
+        # Run motion detection and state machine
+        if background_initialized and frames:
+            # Detect motion
+            persistent_change, per_camera_motion, max_motion = motion_detector.detect_persistent_change(
+                frames, current_time
+            )
+
+            # Map motion detector output to state machine input.
+            # persistent_change from the motion detector already distinguishes
+            # dart impact (persistent change) from transient noise.
+            # We treat persistent_change as dart motion for the state machine.
+            # Hand motion (pull-out) is detected when persistent_change goes
+            # away after darts were on the board — handled by the state machine
+            # timeout and pull-out logic.
+            if persistent_change:
+                # Only signal dart motion if NOT already in ThrowDetected
+                # (persistent_change stays True while dart is in board,
+                # but we don't want to keep resetting the settling timer)
+                if state_machine.current_state != State.ThrowDetected:
+                    motion_data = {"speed": 600.0, "size": 50.0, "duration": 100.0}
+                else:
+                    motion_data = {"speed": 0.0, "size": 0.0, "duration": 0.0}
+                    persistent_change = False  # Don't signal motion while settling
+            else:
+                motion_data = {"speed": 0.0, "size": 0.0, "duration": 0.0}
+
+            # Run dart detection ONCE when state machine has been in ThrowDetected
+            # for at least 0.5s. Use _detection_done flag to prevent re-running.
+            detection_result = None
+            if state_machine.current_state == State.ThrowDetected:
+                time_in_throw = current_time - state_machine.state_entry_time
+                if time_in_throw >= state_machine.settled_timeout_s and not getattr(state_machine, '_detection_done', False):
+                    state_machine._detection_done = True  # Mark: don't detect again this ThrowDetected cycle
+
+                    # Capture post frames
+                    for camera_id in camera_ids:
+                        frame = camera_manager.get_latest_frame(camera_id)
+                        if frame is not None:
+                            background_model.add_post_impact_candidate(camera_id, frame)
+
+                    # Run per-camera detection
+                    fusion_detections = []
+                    for camera_id in camera_ids:
+                        if not background_model.has_pre_impact(camera_id):
+                            continue
+                        pre_frame = background_model.get_pre_impact(camera_id)
+                        post_frame = background_model.get_best_post_impact(camera_id)
+                        if post_frame is None:
+                            continue
+                        tip_x, tip_y, confidence, _ = dart_detectors[camera_id].detect(
+                            pre_frame, post_frame, mask_previous=False
+                        )
+                        if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
+                            board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
+                            if board_result is not None:
+                                board_x, board_y = board_result
+                                fusion_detections.append({
+                                    'camera_id': camera_id,
+                                    'pixel': (tip_x, tip_y),
+                                    'board': (board_x, board_y),
+                                    'confidence': confidence,
+                                })
+
+                    # Fuse and score
+                    if fusion_detections:
+                        detection_result = score_calculator.process_detections(fusion_detections)
+
+                    # Update background for next throw (include dart in new background)
+                    for camera_id, frame in frames.items():
+                        motion_detector.update_background(camera_id, frame)
+                        background_model.update_pre_impact(camera_id, frame)
+            else:
+                # Reset detection flag when not in ThrowDetected
+                state_machine._detection_done = False
+
+            # Process state machine.
+            # When we have a detection result ready, tell the state machine
+            # motion has settled (False) so it processes the detection.
+            sm_motion = persistent_change if detection_result is None else False
+            events = state_machine.process(
+                motion_detected=sm_motion,
+                motion_data=motion_data,
+                detection_result=detection_result,
+                current_time=current_time,
+            )
+
+            # Handle emitted events
+            for event in events:
+                if isinstance(event, DartHitEvent):
+                    s = event.score
+                    if s.ring == "bull":
+                        last_score_text = "BULL (50)"
+                    elif s.ring == "single_bull":
+                        last_score_text = "Single Bull (25)"
+                    elif s.ring == "out_of_bounds":
+                        last_score_text = "MISS (0)"
+                    else:
+                        ring_prefix = {"triple": "T", "double": "D", "single": "S"}.get(s.ring, "")
+                        last_score_text = f"{ring_prefix}{s.sector} = {s.total}"
+                    logger.info(f"DartHitEvent: {last_score_text} pos=({event.board_x:.1f}, {event.board_y:.1f})")
+                elif isinstance(event, DartRemovedEvent):
+                    logger.info(f"DartRemovedEvent: removed={event.count_removed}, "
+                                f"remaining={event.count_remaining}")
+                    last_score_text = ""
+                elif isinstance(event, DartBounceOutEvent):
+                    logger.info(f"DartBounceOutEvent: dart_id={event.dart_id}")
+                elif isinstance(event, ThrowMissEvent):
+                    logger.info(f"ThrowMissEvent: reason={event.reason}")
+
+        # Display state on all camera windows
+        for camera_id in camera_ids:
+            if camera_id not in frames:
+                continue
+            display = frames[camera_id].copy()
+            h, w = display.shape[:2]
+
+            state_text = f"State: {state_machine.current_state.value}"
+            dart_count = state_machine.dart_tracker.get_total_dart_count()
+            count_text = f"Darts: {dart_count}/3"
+
+            cv2.putText(display, state_text, (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(display, count_text, (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+            if last_score_text:
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+
+            cv2.imshow(f"Camera {camera_id}", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
+
+    cv2.destroyAllWindows()
+
+
 def main():
     parser = argparse.ArgumentParser(description='ARU-DART Camera Capture')
     parser.add_argument('--config', default='config.toml', help='Path to config file')
@@ -883,6 +1064,7 @@ def main():
     parser.add_argument('--ring', type=str, choices=['T', 'D', 'BS', 'SS'],
                         help='Ring filter for accuracy test: T=triple, D=double, BS=big single, SS=small single. Tests all 20 sectors for that ring.')
     parser.add_argument('--feedback-mode', action='store_true', help='Enable feedback collection mode')
+    parser.add_argument('--state-machine', action='store_true', help='Use state machine for throw lifecycle')
     args = parser.parse_args()
 
     # --accuracy-test implies --diagnostics
@@ -972,6 +1154,12 @@ def main():
     # Initialize score calculator for multi-camera fusion
     score_calculator = ScoreCalculator(config)
     logger.info("Score calculator initialized")
+
+    # Initialize state machine if --state-machine flag is set
+    state_machine = None
+    if args.state_machine:
+        state_machine = ThrowStateMachine(config, score_calculator)
+        logger.info("State machine mode enabled")
 
     # Initialize feedback system if --feedback-mode is enabled
     feedback_collector = None
@@ -1125,6 +1313,40 @@ def main():
             if diagnostic_logger is not None:
                 diagnostic_logger.write_session_summary()
                 logger.info(f"Diagnostics saved to: {diagnostic_logger.session_dir}")
+            camera_manager.stop_all()
+            logger.info("Shutdown complete")
+        return
+
+    # --- State machine mode ---
+    if args.state_machine and state_machine is not None:
+        dart_config = config['dart_detection']
+        dart_detectors = {}
+        for cam_id in camera_ids:
+            dart_detectors[cam_id] = DartDetector(
+                diff_threshold=dart_config['diff_threshold'],
+                blur_kernel=dart_config['blur_kernel'],
+                min_dart_area=dart_config['min_dart_area'],
+                max_dart_area=dart_config['max_dart_area'],
+                min_shaft_length=dart_config['min_shaft_length'],
+                aspect_ratio_min=dart_config['aspect_ratio_min']
+            )
+        motion_config = config['motion_detection']
+        motion_detector = MotionDetector(
+            downscale_factor=motion_config['downscale_factor'],
+            motion_threshold=motion_config['motion_threshold'],
+            blur_kernel=motion_config['blur_kernel'],
+            settled_threshold=motion_config['settled_threshold']
+        )
+        background_model = BackgroundModel()
+        try:
+            run_state_machine_mode(
+                camera_ids, camera_manager, motion_detector, background_model,
+                dart_detectors, coordinate_mapper, score_calculator,
+                state_machine, config, logger
+            )
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
             camera_manager.stop_all()
             logger.info("Shutdown complete")
         return

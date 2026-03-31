@@ -145,3 +145,22 @@ sector_order = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 
 sector_width_deg = 18.0
 wire_gap_deg = 2.0
 sector_offset_deg = 0.0
+
+# State machine configuration
+[state_machine]
+settled_timeout_ms = 500          # Wait for motion to settle
+throw_timeout_ms = 2000           # Max time to detect dart after motion
+pull_out_timeout_ms = 5000        # Max time for pull-out
+
+# Motion classification (dart vs hand)
+[motion_classification]
+dart_speed_threshold_px_per_s = 500
+hand_speed_threshold_px_per_s = 200
+dart_size_threshold_px2 = 100
+hand_size_threshold_px2 = 500
+dart_duration_threshold_ms = 200
+hand_duration_threshold_ms = 500
+
+# Bounce-out detection
+[bounce_out_detection]
+check_interval_ms = 1000
