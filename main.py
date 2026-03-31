@@ -15,8 +15,9 @@ from src.calibration import CoordinateMapper, CalibrationManager, BoardGeometry
 from src.fusion import ScoreCalculator
 from src.diagnostics import DiagnosticLogger, AccuracyTestRunner
 from src.diagnostics.known_positions import build_known_positions
-from src.feedback.feedback_collector import FeedbackCollector
+from src.feedback.feedback_collector import FeedbackCollector, score_to_display_string, score_to_parsed_score
 from src.feedback.feedback_storage import FeedbackStorage
+from src.feedback.score_parser import ScoreParser
 from src.util.logging_setup import setup_logging
 from src.util.metrics import FPSCounter
 
@@ -66,12 +67,14 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
     throw_count = 0
     fps_counters = {cam_id: FPSCounter() for cam_id in camera_ids}
 
-    # States: "stabilize", "countdown_throw", "waiting", "detected", "countdown_result"
+    # States: "stabilize", "countdown_throw", "waiting", "detected", "feedback", "countdown_result"
     state = "stabilize"
     state_start = time.time()
     last_score_text = ""
     last_detail_text = ""
     last_cameras_text = ""
+    last_event = None
+    last_image_paths = {}
 
     # Create windows
     for i, camera_id in enumerate(camera_ids):
@@ -231,17 +234,22 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
 
                         # Collect feedback if feedback mode is enabled
                         if feedback_collector is not None:
-                            feedback_data = feedback_collector.collect_feedback(event, image_paths)
-                            if feedback_data is not None and feedback_storage is not None:
-                                feedback_id = feedback_storage.save_feedback(feedback_data)
-                                logger.info(f"Feedback saved: {feedback_id}")
+                            last_event = event
+                            last_image_paths = image_paths
                     else:
                         last_score_text = "Fusion failed"
                 else:
                     last_score_text = "No board coords"
 
-            state = "countdown_result"
+            if feedback_collector is not None and last_event is not None:
+                state = "feedback"
+            else:
+                state = "countdown_result"
             state_start = current_time
+
+        elif state == "feedback":
+            # Wait for y/n keypress — handled in key section below
+            pass
 
         elif state == "countdown_result":
             # Show result for 5s, then restart cycle
@@ -272,6 +280,15 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
                 cv2.putText(display, "THROW NOW", (w // 2 - 120, h // 2),
                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
 
+            elif state == "feedback":
+                # Show score and ask for confirmation
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                cv2.putText(display, last_detail_text, (20, h - 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, "Correct? (y)es / (n)o", (w // 2 - 160, h // 2 + 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+
             elif state in ("detected", "countdown_result"):
                 remaining = max(0, 5.0 - elapsed) if state == "countdown_result" else 0
                 # Score in large text
@@ -294,6 +311,27 @@ def run_single_dart_test(camera_ids, camera_manager, motion_detector, background
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q') or key == 27:
             break
+
+        # Handle feedback keypresses
+        if state == "feedback" and last_event is not None:
+            if key == ord('y') or key == ord('n'):
+                detected_parsed = score_to_parsed_score(last_event.score)
+                is_correct = (key == ord('y'))
+                feedback_data = {
+                    "detected_score": detected_parsed,
+                    "actual_score": detected_parsed,
+                    "is_correct": is_correct,
+                    "user_response": "y" if is_correct else "n",
+                    "dart_hit_event": last_event,
+                    "image_paths": last_image_paths,
+                }
+                if feedback_storage is not None:
+                    feedback_id = feedback_storage.save_feedback(feedback_data)
+                    logger.info(f"Feedback saved: {feedback_id} ({'correct' if is_correct else 'incorrect'})")
+                last_event = None
+                last_image_paths = {}
+                state = "countdown_result"
+                state_start = time.time()
 
     cv2.destroyAllWindows()
 
@@ -319,12 +357,14 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
     result_time = 5.0   # Seconds to show result
     throw_count = 0
 
-    # States: "stabilize", "placing", "detecting", "result", "removing"
+    # States: "stabilize", "placing", "detecting", "feedback", "result", "removing"
     # First run starts at "stabilize" (no dart to remove yet)
     state = "stabilize"
     state_start = time.time()
     last_score_text = ""
     last_detail_text = ""
+    last_event = None
+    last_image_paths = {}
     last_cameras_text = ""
 
     for i, camera_id in enumerate(camera_ids):
@@ -466,17 +506,22 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
 
                         # Collect feedback if feedback mode is enabled
                         if feedback_collector is not None:
-                            feedback_data = feedback_collector.collect_feedback(event, image_paths)
-                            if feedback_data is not None and feedback_storage is not None:
-                                feedback_id = feedback_storage.save_feedback(feedback_data)
-                                logger.info(f"Feedback saved: {feedback_id}")
+                            last_event = event
+                            last_image_paths = image_paths
                     else:
                         last_score_text = "Fusion failed"
                 else:
                     last_score_text = "No board coords"
 
-            state = "result"
+            if feedback_collector is not None and last_event is not None:
+                state = "feedback"
+            else:
+                state = "result"
             state_start = current_time
+
+        elif state == "feedback":
+            # Wait for y/n keypress — handled in key section below
+            pass
 
         elif state == "result":
             if elapsed >= result_time:
@@ -522,6 +567,15 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
                 cv2.putText(display, "Detecting...", (w // 2 - 120, h // 2),
                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
 
+            elif state == "feedback":
+                # Show score and ask for confirmation
+                cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 40),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                cv2.putText(display, last_detail_text, (20, h - 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(display, "Correct? (y)es / (n)o", (w // 2 - 160, h // 2 + 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+
             elif state == "result":
                 remaining = max(0, result_time - elapsed)
                 cv2.putText(display, last_score_text, (w // 2 - 150, h // 2 - 20),
@@ -542,7 +596,26 @@ def run_manual_dart_test(camera_ids, camera_manager, background_model,
         if key == ord('q') or key == 27:
             break
 
-    cv2.destroyAllWindows()
+        # Handle feedback keypresses
+        if state == "feedback" and last_event is not None:
+            if key == ord('y') or key == ord('n'):
+                detected_parsed = score_to_parsed_score(last_event.score)
+                is_correct = (key == ord('y'))
+                feedback_data = {
+                    "detected_score": detected_parsed,
+                    "actual_score": detected_parsed,
+                    "is_correct": is_correct,
+                    "user_response": "y" if is_correct else "n",
+                    "dart_hit_event": last_event,
+                    "image_paths": last_image_paths,
+                }
+                if feedback_storage is not None:
+                    feedback_id = feedback_storage.save_feedback(feedback_data)
+                    logger.info(f"Feedback saved: {feedback_id} ({'correct' if is_correct else 'incorrect'})")
+                last_event = None
+                last_image_paths = {}
+                state = "result"
+                state_start = time.time()
 
 
 def run_accuracy_test(camera_ids, camera_manager, background_model,
