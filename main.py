@@ -980,6 +980,7 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
 
                     # Run per-camera detection
                     fusion_detections = []
+                    per_cam_debug = {}  # Store debug info for annotated images
                     for camera_id in camera_ids:
                         if not background_model.has_pre_impact(camera_id):
                             continue
@@ -987,9 +988,10 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                         post_frame = background_model.get_best_post_impact(camera_id)
                         if post_frame is None:
                             continue
-                        tip_x, tip_y, confidence, _ = dart_detectors[camera_id].detect(
+                        tip_x, tip_y, confidence, debug_info = dart_detectors[camera_id].detect(
                             pre_frame, post_frame, mask_previous=False
                         )
+                        per_cam_debug[camera_id] = (post_frame, tip_x, tip_y, debug_info)
                         if tip_x is not None and coordinate_mapper.is_calibrated(camera_id):
                             board_result = coordinate_mapper.map_to_board(camera_id, float(tip_x), float(tip_y))
                             if board_result is not None:
@@ -1013,11 +1015,21 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                         throw_dir.mkdir(parents=True, exist_ok=True)
                         for camera_id in camera_ids:
                             pre_frame = background_model.get_pre_impact(camera_id)
-                            post_frame = background_model.get_best_post_impact(camera_id)
                             if pre_frame is not None:
                                 cv2.imwrite(str(throw_dir / f"cam{camera_id}_pre.jpg"), pre_frame)
-                            if post_frame is not None:
+                            if camera_id in per_cam_debug:
+                                post_frame, tip_x, tip_y, debug_info = per_cam_debug[camera_id]
                                 cv2.imwrite(str(throw_dir / f"cam{camera_id}_post.jpg"), post_frame)
+                                # Create annotated image
+                                annotated = post_frame.copy()
+                                if tip_x is not None:
+                                    cv2.circle(annotated, (tip_x, tip_y), 10, (0, 0, 255), 2)
+                                    cv2.circle(annotated, (tip_x, tip_y), 3, (0, 255, 0), -1)
+                                    cv2.putText(annotated, f"({tip_x},{tip_y})", (tip_x + 15, tip_y - 15),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                    if debug_info and 'contour' in debug_info:
+                                        cv2.drawContours(annotated, [debug_info['contour']], -1, (255, 0, 0), 2)
+                                cv2.imwrite(str(throw_dir / f"cam{camera_id}_annotated.jpg"), annotated)
                         if detection_result is not None:
                             event_path = throw_dir / f"event_{ts}.json"
                             with open(event_path, 'w') as f:
