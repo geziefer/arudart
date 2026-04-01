@@ -869,7 +869,8 @@ def run_accuracy_test(camera_ids, camera_manager, background_model,
 
 def run_state_machine_mode(camera_ids, camera_manager, motion_detector, background_model,
                            dart_detectors, coordinate_mapper, score_calculator,
-                           state_machine, config, logger):
+                           state_machine, config, logger,
+                           event_bus=None, round_tracker=None):
     """Run the state machine mode for throw lifecycle management.
 
     Initializes cameras and background, then runs a main loop that:
@@ -1023,6 +1024,10 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
             # Handle emitted events
             for event in events:
                 if isinstance(event, DartHitEvent):
+                    # Publish to event bus via round tracker
+                    if round_tracker is not None and event_bus is not None:
+                        for evt_dict in round_tracker.process_hit(event):
+                            event_bus.publish(evt_dict)
                     s = event.score
                     if s.ring == "bull":
                         last_score_text = "BULL (50)"
@@ -1039,6 +1044,11 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                                 f"remaining={event.count_remaining}")
                     last_score_text = ""
                     if event.count_remaining == 0:
+                        # Publish darts_removed and reset round tracker
+                        if event_bus is not None:
+                            event_bus.publish({"event": "darts_removed", "message": "Ready for next round"})
+                        if round_tracker is not None:
+                            round_tracker.reset()
                         # All darts removed — cooldown 2s before accepting new throws
                         pull_out_cooldown_until = current_time + 2.0
                         logger.info("Pull-out complete, cooldown 2s before next round")
@@ -1095,6 +1105,7 @@ def main():
                         help='Ring filter for accuracy test: T=triple, D=double, BS=big single, SS=small single. Tests all 20 sectors for that ring.')
     parser.add_argument('--feedback-mode', action='store_true', help='Enable feedback collection mode')
     parser.add_argument('--state-machine', action='store_true', help='Use state machine for throw lifecycle')
+    parser.add_argument('--api-port', type=int, default=8000, help='Port for the web API server (default: 8000)')
     args = parser.parse_args()
 
     # --accuracy-test implies --diagnostics
@@ -1349,6 +1360,10 @@ def main():
 
     # --- State machine mode ---
     if args.state_machine and state_machine is not None:
+        from src.api.event_bus import EventBus
+        from src.api.round_tracker import RoundTracker
+        from src.api.server import create_app, start_server
+
         dart_config = config['dart_detection']
         dart_detectors = {}
         for cam_id in camera_ids:
@@ -1368,11 +1383,20 @@ def main():
             settled_threshold=motion_config['settled_threshold']
         )
         background_model = BackgroundModel()
+
+        # Create and start API server
+        event_bus = EventBus()
+        round_tracker = RoundTracker()
+        api_app = create_app(event_bus, state_machine)
+        start_server(api_app, host="0.0.0.0", port=args.api_port)
+        logger.info(f"API server started on port {args.api_port}")
+
         try:
             run_state_machine_mode(
                 camera_ids, camera_manager, motion_detector, background_model,
                 dart_detectors, coordinate_mapper, score_calculator,
-                state_machine, config, logger
+                state_machine, config, logger,
+                event_bus=event_bus, round_tracker=round_tracker
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
