@@ -17,29 +17,33 @@ import httpx
 
 dart_lines = ["", "", ""]
 total_text = ""
+state_text = "Ready to throw"
 status_text = "Connecting..."
 lock = threading.Lock()
 
 
 def set_dart(n, label, pts):
-    global dart_lines, total_text
+    global dart_lines, total_text, state_text
     with lock:
         if 1 <= n <= 3:
             dart_lines[n - 1] = "Dart %d:  %s  (%d)" % (n, label, pts)
         total_text = ""
+        state_text = "Ready to throw"
 
 
 def set_total(t):
-    global total_text
+    global total_text, state_text
     with lock:
         total_text = "= %d" % t
+        state_text = "Pull-out darts!"
 
 
 def clear_round():
-    global dart_lines, total_text, status_text
+    global dart_lines, total_text, status_text, state_text
     with lock:
         dart_lines = ["", "", ""]
         total_text = ""
+        state_text = "Ready to throw"
         status_text = "Waiting for darts..."
 
 
@@ -54,7 +58,13 @@ def render():
     with lock:
         darts = list(dart_lines)
         total = total_text
+        state = state_text
         info = status_text
+    # State text top-right
+    if state:
+        color = (0, 165, 255) if state == "Pull-out darts!" else (0, 200, 0)
+        cv2.putText(img, state, (400, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
     y = 80
     for line in darts:
         if line:
@@ -78,7 +88,7 @@ def listen(host, port):
             set_status("Connecting to %s:%d..." % (host, port))
             with httpx.stream("GET", url, timeout=None) as r:
                 r.raise_for_status()
-                set_status("Connected. Waiting for darts...")
+                set_status("Connected. Ready to throw!")
                 etype, dbuf = None, ""
                 for line in r.iter_lines():
                     if line.startswith("event:"):

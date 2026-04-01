@@ -870,7 +870,8 @@ def run_accuracy_test(camera_ids, camera_manager, background_model,
 def run_state_machine_mode(camera_ids, camera_manager, motion_detector, background_model,
                            dart_detectors, coordinate_mapper, score_calculator,
                            state_machine, config, logger,
-                           event_bus=None, round_tracker=None):
+                           event_bus=None, round_tracker=None, save_images=False,
+                           dev_mode=False):
     """Run the state machine mode for throw lifecycle management.
 
     Initializes cameras and background, then runs a main loop that:
@@ -878,11 +879,22 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
     - Feeds events into the ThrowStateMachine
     - Handles emitted events (DartHitEvent, DartRemovedEvent, etc.)
     - Displays current state on CV window
+    - Optionally saves pre/post/annotated images per throw (--save-images)
     """
     from src.fusion.dart_hit_event import DartHitEvent
 
     logger.info("=== STATE MACHINE MODE ===")
     logger.info("Press 'q' or ESC to quit")
+    if save_images:
+        session_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        throws_dir = Path("data/throws")
+        throws_dir.mkdir(parents=True, exist_ok=True)
+        existing = list(throws_dir.glob("Session_*"))
+        session_num = len(existing) + 1
+        session_dir = throws_dir / f"Session_{session_num:03d}_{session_timestamp}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Saving images to {session_dir}")
+    throw_count = 0
 
     # Initialize background
     background_initialized = False
@@ -993,6 +1005,24 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                     if fusion_detections:
                         detection_result = score_calculator.process_detections(fusion_detections)
 
+                    # Save images if enabled
+                    if save_images:
+                        throw_count += 1
+                        ts = datetime.now().strftime("%H-%M-%S")
+                        throw_dir = session_dir / f"Throw_{throw_count:03d}_{ts}"
+                        throw_dir.mkdir(parents=True, exist_ok=True)
+                        for camera_id in camera_ids:
+                            pre_frame = background_model.get_pre_impact(camera_id)
+                            post_frame = background_model.get_best_post_impact(camera_id)
+                            if pre_frame is not None:
+                                cv2.imwrite(str(throw_dir / f"cam{camera_id}_pre.jpg"), pre_frame)
+                            if post_frame is not None:
+                                cv2.imwrite(str(throw_dir / f"cam{camera_id}_post.jpg"), post_frame)
+                        if detection_result is not None:
+                            event_path = throw_dir / f"event_{ts}.json"
+                            with open(event_path, 'w') as f:
+                                json.dump(detection_result.to_dict(), f, indent=2)
+
                     # Update background for next throw (include dart in new background)
                     for camera_id, frame in frames.items():
                         motion_detector.update_background(camera_id, frame)
@@ -1057,33 +1087,35 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                 elif isinstance(event, ThrowMissEvent):
                     logger.info(f"ThrowMissEvent: reason={event.reason}")
 
-        # Display state on all camera windows
-        for camera_id in camera_ids:
-            if camera_id not in frames:
-                continue
-            display = frames[camera_id].copy()
-            h, w = display.shape[:2]
+        # Display state on all camera windows (dev mode only)
+        if dev_mode:
+            for camera_id in camera_ids:
+                if camera_id not in frames:
+                    continue
+                display = frames[camera_id].copy()
+                h, w = display.shape[:2]
 
-            state_text = f"State: {state_machine.current_state.value}"
-            dart_count = state_machine.dart_tracker.get_total_dart_count()
-            count_text = f"Darts: {dart_count}/3"
+                state_text = f"State: {state_machine.current_state.value}"
+                dart_count = state_machine.dart_tracker.get_total_dart_count()
+                count_text = f"Darts: {dart_count}/3"
 
-            cv2.putText(display, state_text, (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.putText(display, count_text, (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv2.putText(display, state_text, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(display, count_text, (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-            if last_score_text:
-                cv2.putText(display, last_score_text, (w // 2 - 200, h - 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 255, 255), 4)
+                if last_score_text:
+                    cv2.putText(display, last_score_text, (w // 2 - 200, h - 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 255, 255), 4)
 
-            cv2.imshow(f"Camera {camera_id}", display)
+                cv2.imshow(f"Camera {camera_id}", display)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == 27:
-            break
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or key == 27:
+                break
 
-    cv2.destroyAllWindows()
+    if dev_mode:
+        cv2.destroyAllWindows()
 
 
 def main():
@@ -1104,13 +1136,20 @@ def main():
     parser.add_argument('--ring', type=str, choices=['T', 'D', 'BS', 'SS'],
                         help='Ring filter for accuracy test: T=triple, D=double, BS=big single, SS=small single. Tests all 20 sectors for that ring.')
     parser.add_argument('--feedback-mode', action='store_true', help='Enable feedback collection mode')
-    parser.add_argument('--state-machine', action='store_true', help='Use state machine for throw lifecycle')
+    parser.add_argument('--state-machine', action='store_true', help='Use state machine for throw lifecycle (default mode)')
+    parser.add_argument('--save-images', action='store_true', help='Save pre/post/annotated images per throw in state machine mode (for analysis)')
     parser.add_argument('--api-port', type=int, default=8000, help='Port for the web API server (default: 8000)')
     args = parser.parse_args()
 
     # --accuracy-test implies --diagnostics
     if args.accuracy_test:
         args.diagnostics = True
+
+    # State machine is the default mode — activate unless another mode is explicitly chosen
+    other_modes = (args.single_dart_test or args.manual_dart_test or
+                   args.accuracy_test or args.manual_test or args.record_mode)
+    if not other_modes:
+        args.state_machine = True
 
     # --diagnostics requires a test mode
     if args.diagnostics and not (args.manual_dart_test or args.single_dart_test or args.accuracy_test):
@@ -1396,7 +1435,8 @@ def main():
                 camera_ids, camera_manager, motion_detector, background_model,
                 dart_detectors, coordinate_mapper, score_calculator,
                 state_machine, config, logger,
-                event_bus=event_bus, round_tracker=round_tracker
+                event_bus=event_bus, round_tracker=round_tracker,
+                save_images=args.save_images, dev_mode=args.dev_mode
             )
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
