@@ -1,173 +1,100 @@
-# Step 9: Web API (FastAPI + WebSockets)
+# Requirements Document
 
-## Overview
+## Introduction
 
-Expose dart detection events and system metrics over a network API using FastAPI with REST endpoints and WebSocket support. The API serves two types of consumers: real-time event consumers (every event) and round-based consumers (aggregated 3-dart rounds).
+A minimal HTTP API layer for the ARU-DART backend that pushes dart scoring events to a Flutter dart training app running on a tablet on the same local network. The backend runs on a Raspberry Pi 4 with cameras; the app runs on a tablet — both on the same WLAN. The API bridges the existing `ThrowStateMachine` event stream to connected HTTP clients using Server-Sent Events (SSE), and exposes a reset endpoint for game management.
 
-## Consumer Types
+## Glossary
 
-### Real-Time Consumer
-Receives every individual event as it happens (dart hits, removals, bounce-outs, misses, state changes). Use case: live scoreboards, real-time UI updates, spectator displays, sound/visual effects.
+- **API_Server**: The FastAPI HTTP server running in a background thread within the ARU-DART process.
+- **Event_Bus**: A thread-safe queue that bridges events from the main camera/detection loop thread to the API_Server thread.
+- **SSE_Stream**: The Server-Sent Events endpoint at `GET /api/events` that pushes scoring events to connected clients.
+- **SSE_Client**: A connected HTTP client (typically the Flutter app) consuming the SSE_Stream.
+- **dart_scored**: An SSE event emitted immediately after a single dart is detected and scored.
+- **round_complete**: An SSE event emitted when all 3 darts in a round have been scored (ThrowFinished state).
+- **darts_removed**: An SSE event emitted when pull-out is complete and the system is ready for the next round.
+- **Score_Label**: A short string representing a dart score in the format T20, D16, S5, SB, DB, or Miss.
+- **ThrowStateMachine**: The existing state machine in `src/state_machine/throw_state_machine.py` that manages the dart throw lifecycle.
+- **DartHitEvent**: The event emitted by the ThrowStateMachine when a dart is detected and scored.
+- **DartRemovedEvent**: The event emitted by the ThrowStateMachine when darts are pulled out.
 
-### Round-Based Consumer
-Receives aggregated round data after 3 darts are thrown. Use case: game logic, score tracking, statistics, tournament systems that only care about complete rounds.
+## Requirements
 
-## User Stories
+### Requirement 1: SSE Event Stream Endpoint
 
-### US-9.1: REST Health Endpoint
-**As a** system administrator  
-**I want to** check system health and status via REST API  
-**So that** I can monitor the system remotely
+**User Story:** As a Flutter app, I want to connect to a persistent SSE stream, so that I can receive dart scoring events in real time without polling.
 
-**Acceptance Criteria:**
-- AC-9.1.1: `GET /health` returns service status (running/stopped)
-- AC-9.1.2: Response includes per-camera FPS
-- AC-9.1.3: Response includes uptime
-- AC-9.1.4: Response includes last detection timestamp
-- AC-9.1.5: Response time <100ms
+#### Acceptance Criteria
 
-### US-9.2: REST Metrics Endpoint
-**As a** developer  
-**I want to** retrieve system metrics via REST API  
-**So that** I can analyze performance and debug issues
+1. THE API_Server SHALL expose a `GET /api/events` endpoint that returns a `text/event-stream` response.
+2. WHEN an SSE_Client connects to `GET /api/events`, THE API_Server SHALL keep the connection open and push events as they occur.
+3. THE SSE_Stream SHALL support multiple simultaneous SSE_Clients receiving the same events.
+4. WHEN an SSE_Client disconnects, THE API_Server SHALL release that client's resources without affecting other connected SSE_Clients.
+5. WHILE no events are pending, THE API_Server SHALL send a keepalive comment (`: keepalive`) to each SSE_Client at an interval not exceeding 15 seconds to prevent connection timeouts.
 
-**Acceptance Criteria:**
-- AC-9.2.1: `GET /metrics` returns detection counts
-- AC-9.2.2: Response includes average detection latency
-- AC-9.2.3: Response includes per-camera detection rates
-- AC-9.2.4: Response includes error counts
-- AC-9.2.5: Metrics reset on server restart
+### Requirement 2: dart_scored Event
 
-### US-9.3: WebSocket Real-Time Event Streaming
-**As a** real-time consumer  
-**I want to** receive all dart events in real-time via WebSocket  
-**So that** I can update UI immediately when any event occurs
+**User Story:** As a Flutter app, I want to receive a `dart_scored` event immediately after each dart lands, so that I can display the score for each individual dart as it happens.
 
-**Acceptance Criteria:**
-- AC-9.3.1: `GET /ws/events` establishes WebSocket connection for all events
-- AC-9.3.2: All events broadcast to connected clients (DartHitEvent, DartRemovedEvent, DartBounceOutEvent, ThrowMissEvent, StateChangeEvent)
-- AC-9.3.3: Events sent as JSON messages with event_type field
-- AC-9.3.4: Connection handles multiple concurrent clients (10+)
-- AC-9.3.5: Graceful disconnect handling
-- AC-9.3.6: No event filtering (consumers receive all events)
+#### Acceptance Criteria
 
-### US-9.4: WebSocket Round Completion Streaming
-**As a** round-based consumer  
-**I want to** receive round completion notifications via WebSocket  
-**So that** I can process complete 3-dart rounds without tracking individual events
+1. WHEN the ThrowStateMachine emits a `DartHitEvent`, THE Event_Bus SHALL publish a `dart_scored` SSE event to all connected SSE_Clients.
+2. THE `dart_scored` event payload SHALL contain `dart_number` (1, 2, or 3), `label` (Score_Label string), and `points` (integer total score).
+3. THE `dart_scored` event SHALL be emitted before the `round_complete` event for the same round.
+4. THE Score_Label in the `dart_scored` payload SHALL use the format: `T{sector}` for triples, `D{sector}` for doubles, `S{sector}` for singles, `SB` for single bull, `DB` for double bull, and `Miss` for misses.
+5. THE `dart_number` field SHALL reflect the sequential position of the dart within the current round (1, 2, or 3).
 
-**Acceptance Criteria:**
-- AC-9.4.1: `GET /ws/rounds` establishes WebSocket connection for round events
-- AC-9.4.2: RoundCompleteEvent sent when round finishes (3 darts thrown or pull-out)
-- AC-9.4.3: Event includes all dart scores, total score, and round metadata
-- AC-9.4.4: Event includes bounce-outs and misses count
-- AC-9.4.5: Connection handles multiple concurrent clients
+### Requirement 3: round_complete Event
 
-### US-9.5: REST Current Round Endpoint
-**As a** round-based consumer  
-**I want to** query the current round state via REST API  
-**So that** I can poll for round progress without WebSocket
+**User Story:** As a Flutter app, I want to receive a `round_complete` event when all 3 darts are scored, so that I can submit the round total and update the game state.
 
-**Acceptance Criteria:**
-- AC-9.5.1: `GET /rounds/current` returns current round in progress
-- AC-9.5.2: Response includes darts thrown so far (0-3)
-- AC-9.5.3: Response includes current total score
-- AC-9.5.4: Response includes round state (in_progress/completed)
-- AC-9.5.5: Returns empty/null if no round in progress
+#### Acceptance Criteria
 
-### US-9.6: REST Latest Round Endpoint
-**As a** round-based consumer  
-**I want to** retrieve the most recently completed round via REST API  
-**So that** I can get final round results
+1. WHEN the ThrowStateMachine transitions to the `ThrowFinished` state, THE Event_Bus SHALL publish a `round_complete` SSE event to all connected SSE_Clients.
+2. THE `round_complete` event payload SHALL contain a `throws` array with one entry per dart, each containing `dart_number`, `label`, and `points`.
+3. THE `round_complete` event payload SHALL contain a `total` field with the integer sum of all dart scores in the round.
+4. THE `throws` array in the `round_complete` payload SHALL contain exactly the darts scored in the current round, in the order they were thrown.
+5. IF fewer than 3 darts were scored due to bounce-outs or misses, THEN THE `round_complete` payload SHALL still reflect only the darts that registered scores.
 
-**Acceptance Criteria:**
-- AC-9.6.1: `GET /rounds/latest` returns most recently completed round
-- AC-9.6.2: Response includes all 3 dart scores (or fewer if bounce-outs/misses)
-- AC-9.6.3: Response includes total score for the round
-- AC-9.6.4: Response includes round duration and timestamp
-- AC-9.6.5: Returns null if no completed round exists yet
+### Requirement 4: darts_removed Event
 
-### US-9.7: Round State Tracking
-**As a** system  
-**I want to** track current and last completed round  
-**So that** I can serve round data to consumers
+**User Story:** As a Flutter app, I want to receive a `darts_removed` event when the darts are pulled out, so that I know the system is ready for the next round.
 
-**Acceptance Criteria:**
-- AC-9.7.1: System maintains current round object (0-3 darts)
-- AC-9.7.2: System maintains last completed round object
-- AC-9.7.3: Round resets when all darts removed (transition to WaitForThrow)
-- AC-9.7.4: Round marked complete when 3 darts thrown (transition to ThrowFinished)
-- AC-9.7.5: No historical round storage (only current + last)
+#### Acceptance Criteria
 
-### US-9.8: Event JSON Format
-**As a** client developer  
-**I want to** receive events in a well-defined JSON format  
-**So that** I can parse and process them reliably
+1. WHEN the ThrowStateMachine emits a `DartRemovedEvent` with `count_remaining` equal to 0, THE Event_Bus SHALL publish a `darts_removed` SSE event to all connected SSE_Clients.
+2. THE `darts_removed` event payload SHALL contain a `message` field with the value `"Ready for next round"`.
 
-**Acceptance Criteria:**
-- AC-9.8.1: All events include event_type field
-- AC-9.8.2: Timestamps in ISO 8601 format
-- AC-9.8.3: DartHitEvent includes score, position, confidence
-- AC-9.8.4: RoundCompleteEvent includes all darts, total score, metadata
-- AC-9.8.5: JSON schema documented for all event types
+### Requirement 5: Reset Endpoint
 
-### US-9.9: Server Configuration
-**As a** system operator  
-**I want to** configure server settings via config file  
-**So that** I can customize host, port, and endpoints
+**User Story:** As a Flutter app operator, I want to call a reset endpoint, so that I can recover from errors or start a new game without restarting the backend process.
 
-**Acceptance Criteria:**
-- AC-9.9.1: Host configurable (default: 0.0.0.0)
-- AC-9.9.2: Port configurable (default: 8000)
-- AC-9.9.3: WebSocket paths configurable (default: /ws/events, /ws/rounds)
-- AC-9.9.4: CORS settings configurable
-- AC-9.9.5: Debug mode toggle
+#### Acceptance Criteria
 
-## Technical Constraints
+1. THE API_Server SHALL expose a `POST /api/reset` endpoint.
+2. WHEN `POST /api/reset` is called, THE API_Server SHALL call `state_machine.dart_tracker.clear_all()` and transition the ThrowStateMachine back to the `WaitForThrow` state.
+3. WHEN `POST /api/reset` completes successfully, THE API_Server SHALL return HTTP 200 with JSON body `{"status": "ok", "message": "System reset"}`.
+4. IF the ThrowStateMachine is not available when `POST /api/reset` is called, THEN THE API_Server SHALL return HTTP 503 with a descriptive error message.
 
-- FastAPI with uvicorn server
-- WebSocket pub/sub for event broadcasting
-- Thread-safe event queue for both event types
-- Server runs in separate thread from main loop
-- No blocking operations in API handlers
-- Round state tracking (current + last completed only)
-- No historical round storage beyond last completed
+### Requirement 6: Thread-Safe Event Bus
 
-## API Endpoints Summary
+**User Story:** As a developer, I want a thread-safe event bus, so that the main camera loop and the FastAPI server can exchange events without race conditions.
 
-**WebSocket Endpoints:**
-- `/ws/events` - All events (real-time consumer)
-- `/ws/rounds` - Round completion only (round-based consumer)
+#### Acceptance Criteria
 
-**REST Endpoints:**
-- `GET /health` - System health and status
-- `GET /metrics` - Performance metrics
-- `GET /rounds/current` - Current round in progress
-- `GET /rounds/latest` - Most recently completed round
+1. THE Event_Bus SHALL use a thread-safe queue to pass events from the main loop thread to the API_Server thread.
+2. WHEN the main loop publishes an event to the Event_Bus, THE Event_Bus SHALL deliver that event to all currently connected SSE_Clients.
+3. THE Event_Bus SHALL not block the main camera/detection loop when no SSE_Clients are connected.
+4. WHEN a new SSE_Client connects, THE Event_Bus SHALL register that client to receive subsequent events only (no replay of past events).
 
-## Event Types
+### Requirement 7: FastAPI Server Lifecycle
 
-**Real-Time Events** (sent to `/ws/events`):
-- DartHitEvent - Individual dart scored
-- DartRemovedEvent - Darts pulled out
-- DartBounceOutEvent - Dart fell off board
-- ThrowMissEvent - Throw missed
-- StateChangeEvent - State machine transitions
+**User Story:** As a developer, I want the FastAPI server to run alongside the existing main loop, so that the API does not require a separate process or disrupt camera operation.
 
-**Round Events** (sent to `/ws/rounds`):
-- RoundCompleteEvent - Round finished (3 darts or pull-out)
+#### Acceptance Criteria
 
-## Dependencies
-
-- Step 8: State machine (event generation)
-- FastAPI, uvicorn, websockets libraries
-- Event model (JSON serialization)
-- Round aggregation logic
-
-## Success Metrics
-
-- API response time <100ms
-- WebSocket latency <50ms for event delivery
-- Supports 10+ concurrent WebSocket clients per endpoint
-- No event loss during transmission
-- Round state always consistent with state machine
+1. THE API_Server SHALL run in a separate daemon thread within the same Python process as the camera/detection main loop.
+2. WHEN the `--state-machine` CLI flag is active, THE API_Server SHALL start automatically on a configurable port (default: 8000).
+3. WHEN the main process exits, THE API_Server thread SHALL terminate without requiring an explicit shutdown call.
+4. THE API_Server SHALL not apply CORS restrictions, as all clients are on the same local network.
+5. THE API_Server SHALL listen on `0.0.0.0` to accept connections from any device on the local network.

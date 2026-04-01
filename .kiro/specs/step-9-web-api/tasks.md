@@ -1,217 +1,152 @@
-# Implementation Plan: Step 9 - Web API (FastAPI + WebSockets)
+# Implementation Plan: Step 9 — Web API (SSE)
 
 ## Overview
 
-This implementation plan breaks down the Web API feature into discrete coding tasks. The API provides REST endpoints for health/metrics/rounds and WebSocket endpoints for real-time event streaming and round completion notifications. The server runs in a separate thread with thread-safe event queues for communication with the main detection loop.
+Add a minimal HTTP API layer to the ARU-DART backend using FastAPI and Server-Sent Events (SSE). Three new modules bridge the existing `ThrowStateMachine` event stream to connected clients: `EventBus` (thread-safe pub/sub), `RoundTracker` (accumulates dart hits, emits round_complete), and `Server` (FastAPI app with SSE + reset endpoints). The server runs in a daemon thread alongside the main camera/detection loop.
 
 ## Tasks
 
-- [ ] 1. Set up FastAPI project structure and dependencies
-  - Create `src/api/` directory structure
-  - Add FastAPI, uvicorn, websockets, pydantic to requirements.txt
-  - Create `__init__.py` files for all modules
-  - _Requirements: AC-9.9.1, AC-9.9.2, AC-9.9.3, AC-9.9.4, AC-9.9.5_
+- [ ] 1. Add dependencies and create module skeleton
+  - Add `fastapi>=0.110.0`, `uvicorn>=0.29.0`, and `httpx>=0.27.0` to `requirements.txt`
+  - Create `src/api/__init__.py` (empty)
+  - _Requirements: 7.1, 7.2_
 
-- [ ] 2. Implement event queue for thread-safe communication
-  - [ ] 2.1 Create EventQueue class with thread-safe operations
-    - Implement put(), get(), size(), clear() methods
-    - Use queue.Queue for thread safety
-    - Add configurable max queue size
-    - _Requirements: AC-9.7.1_
-  
-  - [ ] 2.2 Write unit tests for EventQueue
-    - Test concurrent put/get operations
-    - Test queue full behavior
-    - Test timeout handling
-    - _Requirements: AC-9.7.1_
+- [ ] 2. Implement EventBus (`src/api/event_bus.py`)
+  - [ ] 2.1 Create `EventBus` class with `publish()`, `subscribe()`, and `subscriber_count`
+    - `publish(event: dict) -> None` — called from main loop thread; uses `loop.call_soon_threadsafe` to put event into each subscriber's `asyncio.Queue`; silently drops if no loop or no subscribers
+    - `subscribe() -> AsyncGenerator[dict, None]` — creates a per-client `asyncio.Queue(maxsize=100)` on entry, removes it on exit; drops oldest event and logs warning when queue is full
+    - `set_loop(loop: asyncio.AbstractEventLoop) -> None` — called once when FastAPI server starts
+    - Use `threading.Lock` to protect `_subscribers` list mutations
+    - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 3. Implement data models for API responses
-  - [ ] 3.1 Create Pydantic models for all data structures
-    - DartInfo model (score, position, timestamp, confidence)
-    - CurrentRound model (round_id, darts, bounce_outs, misses)
-    - CompletedRound model (extends CurrentRound with duration, total_score)
-    - RoundCompleteEvent model (event_type, timestamp, round)
-    - _Requirements: AC-9.8.1, AC-9.8.2, AC-9.8.3, AC-9.8.4_
-  
-  - [ ] 3.2 Write unit tests for data model serialization
-    - Test to_dict() methods for all models
-    - Test JSON serialization round trip
-    - Test timestamp format (ISO 8601)
-    - _Requirements: AC-9.8.5_
+  - [ ]* 2.2 Write property test for EventBus fan-out (Property 1)
+    - **Property 1: Fan-out delivery** — for any event published with N subscribers, every subscriber receives exactly that event
+    - **Validates: Requirements 1.3, 6.2**
+    - Use `asyncio.run()` to exercise publish/subscribe cycle with random event counts and subscriber counts (1–5)
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 4. Implement WebSocketManager for connection handling
-  - [ ] 4.1 Create WebSocketManager class
-    - Implement connect(), disconnect(), broadcast() methods
-    - Use threading.Lock for active_connections list
-    - Handle connection errors gracefully
-    - Track connection count
-    - _Requirements: AC-9.3.1, AC-9.3.4, AC-9.3.5, AC-9.4.1, AC-9.4.5_
-  
-  - [ ] 4.2 Write unit tests for WebSocketManager
-    - Test multiple concurrent connections
-    - Test broadcast to all clients
-    - Test graceful disconnect handling
-    - Test error handling (send failures)
-    - _Requirements: AC-9.3.4, AC-9.3.5_
+  - [ ]* 2.3 Write property test for subscriber disconnect isolation (Property 2)
+    - **Property 2: Subscriber disconnect isolation** — when one subscriber is removed, remaining subscribers still receive subsequent events without loss
+    - **Validates: Requirements 1.4**
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 5. Implement RoundAggregator for round state tracking
-  - [ ] 5.1 Create RoundAggregator class
-    - Implement process_event() method for all event types
-    - Track current_round (0-3 darts)
-    - Track last_completed_round
-    - Use threading.Lock for state protection
-    - Implement finalize_round() for completion
-    - _Requirements: AC-9.7.1, AC-9.7.2, AC-9.7.3, AC-9.7.4, AC-9.7.5_
-  
-  - [ ] 5.2 Write unit tests for RoundAggregator
-    - Test 3-dart round completion
-    - Test early pull-out (< 3 darts)
-    - Test bounce-out counting
-    - Test miss counting
-    - Test round reset on dart removal
-    - _Requirements: AC-9.4.2, AC-9.4.3, AC-9.4.4_
+  - [ ]* 2.4 Write property test for no replay of past events (Property 9)
+    - **Property 9: No replay of past events** — events published before a subscriber connects must not be delivered to that subscriber
+    - **Validates: Requirements 6.4**
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 6. Implement REST endpoint handlers
-  - [ ] 6.1 Create REST handler functions
-    - Implement GET /health endpoint
-    - Implement GET /metrics endpoint
-    - Implement GET /rounds/current endpoint
-    - Implement GET /rounds/latest endpoint
-    - _Requirements: AC-9.1.1, AC-9.1.2, AC-9.1.3, AC-9.1.4, AC-9.2.1, AC-9.2.2, AC-9.2.3, AC-9.5.1, AC-9.5.2, AC-9.5.3, AC-9.6.1, AC-9.6.2, AC-9.6.3_
-  
-  - [ ] 6.2 Write unit tests for REST endpoints
-    - Test /health response format and status codes
-    - Test /metrics response format
-    - Test /rounds/current with and without active round
-    - Test /rounds/latest with and without completed round
-    - Test response time < 100ms
-    - _Requirements: AC-9.1.5, AC-9.2.4, AC-9.5.4, AC-9.5.5, AC-9.6.4, AC-9.6.5_
+  - [ ]* 2.5 Write unit tests for EventBus
+    - Test `publish()` with no subscribers is a no-op (non-blocking)
+    - Test `publish()` before `set_loop()` is called drops event silently
+    - Test `subscriber_count` increments on subscribe and decrements on exit
+    - _File: `tests/test_api.py`_
 
-- [ ] 7. Implement MetricsTracker for system metrics
-  - [ ] 7.1 Create MetricsTracker class
-    - Track detection counts by event type
-    - Track detection latencies
-    - Track per-camera detection rates
-    - Track error counts
-    - Use threading.Lock for metrics protection
-    - _Requirements: AC-9.2.1, AC-9.2.2, AC-9.2.3, AC-9.2.4_
-  
-  - [ ] 7.2 Write unit tests for MetricsTracker
-    - Test metric recording (events, latencies, errors)
-    - Test thread-safe metric updates
-    - Test metric reset
-    - _Requirements: AC-9.2.5_
+- [ ] 3. Implement RoundTracker (`src/api/round_tracker.py`)
+  - [ ] 3.1 Create `RoundTracker` class with `process_hit()`, `reset()`, and `dart_count`
+    - `process_hit(dart_hit: DartHitEvent) -> list[dict]` — increments internal counter (1→2→3); always returns `[dart_scored_dict]`; appends `round_complete_dict` when counter reaches 3
+    - `reset() -> None` — clears accumulated throws and resets counter to 0
+    - `dart_count -> int` — current number of darts in this round (0–3)
+    - Score label conversion: `T{sector}`, `D{sector}`, `S{sector}`, `SB`, `DB`, `Miss` (reuse pattern from `score_to_display_string` in `src/feedback/feedback_collector.py` but without the points suffix)
+    - `dart_scored` payload: `{"dart_number": int, "label": str, "points": int}`
+    - `round_complete` payload: `{"throws": [...], "total": int}`
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 8. Implement FastAPI application and server thread
-  - [ ] 8.1 Create APIServer class with FastAPI app
-    - Initialize FastAPI app with CORS settings
-    - Create WebSocketManager instances for both endpoints
-    - Create RoundAggregator instance
-    - Create MetricsTracker instance
-    - Implement start() and stop() methods
-    - Implement event processing loop
-    - _Requirements: AC-9.9.1, AC-9.9.2, AC-9.9.3, AC-9.9.4_
-  
-  - [ ] 8.2 Implement WebSocket endpoints
-    - Add /ws/events endpoint for real-time events
-    - Add /ws/rounds endpoint for round completion
-    - Send welcome message on connection
-    - Handle connection lifecycle
-    - _Requirements: AC-9.3.1, AC-9.3.2, AC-9.3.3, AC-9.4.1, AC-9.4.2_
-  
-  - [ ] 8.3 Wire REST endpoints to FastAPI app
-    - Register all REST endpoint handlers
-    - Add error handling middleware
-    - Configure CORS
-    - _Requirements: AC-9.1.1, AC-9.2.1, AC-9.5.1, AC-9.6.1_
+  - [ ]* 3.2 Write property test for dart_scored payload correctness (Property 3)
+    - **Property 3: dart_scored payload correctness** — for any valid `DartHitEvent`, `process_hit()` returns a `dart_scored` dict with `dart_number` (int 1–3), `label` (matching `T{sector}|D{sector}|S{sector}|SB|DB|Miss`), and `points` equal to `score.total`
+    - **Validates: Requirements 2.1, 2.2, 2.4**
+    - Generate random `DartHitEvent` objects with all ring types, sectors 1–20, bulls, misses
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 9. Implement event processing and broadcasting
-  - [ ] 9.1 Create event processing loop in API thread
-    - Pull events from event_queue
-    - Broadcast to /ws/events clients
-    - Process events in RoundAggregator
-    - Broadcast round completion to /ws/rounds clients
-    - Update metrics
-    - _Requirements: AC-9.3.2, AC-9.3.6, AC-9.4.2_
-  
-  - [ ] 9.2 Write unit tests for event processing
-    - Test event broadcast to real-time clients
-    - Test round aggregation and broadcast
-    - Test metrics updates
-    - Test error handling (queue empty, broadcast failures)
-    - _Requirements: AC-9.3.3, AC-9.3.6_
+  - [ ]* 3.3 Write property test for sequential dart numbering (Property 4)
+    - **Property 4: Sequential dart numbering** — for any sequence of `DartHitEvent` objects processed by a fresh `RoundTracker`, `dart_number` in successive `dart_scored` outputs is 1, 2, 3 in order; resets to 1 after `reset()`
+    - **Validates: Requirements 2.5**
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 10. Add configuration support
-  - [ ] 10.1 Add API configuration to config.toml
-    - Add [api] section with host, port, paths
-    - Add CORS settings
-    - Add debug mode toggle
-    - Add event queue size
-    - _Requirements: AC-9.9.1, AC-9.9.2, AC-9.9.3, AC-9.9.4, AC-9.9.5_
-  
-  - [ ] 10.2 Load configuration in APIServer
-    - Read config from config.toml
-    - Apply settings to FastAPI app
-    - Validate configuration values
-    - _Requirements: AC-9.9.1, AC-9.9.2, AC-9.9.3_
+  - [ ]* 3.4 Write property test for round completion ordering (Property 5)
+    - **Property 5: Round completion ordering and emission** — for exactly 3 `DartHitEvent` objects, the 3rd call returns `[dart_scored, round_complete]` in that order; first two calls return only `[dart_scored]`
+    - **Validates: Requirements 2.3, 3.1**
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 11. Integrate API server with main detection loop
-  - [ ] 11.1 Initialize APIServer in main.py
-    - Create APIServer instance with config
-    - Start server thread before main loop
-    - Stop server thread on shutdown
-    - _Requirements: AC-9.7.1_
-  
-  - [ ] 11.2 Push state machine events to API
-    - Call api_server.push_event() for each event
-    - Handle event queue full errors
-    - _Requirements: AC-9.3.2, AC-9.4.2_
+  - [ ]* 3.5 Write property test for round_complete payload correctness (Property 6)
+    - **Property 6: round_complete payload correctness** — for any 3 `DartHitEvent` objects, `round_complete` contains `throws` array with exactly 3 entries in input order and `total` equal to sum of the 3 `points` values
+    - **Validates: Requirements 3.2, 3.3, 3.4**
+    - _File: `tests/test_api_properties.py`_
 
-- [ ] 12. Checkpoint - Ensure all tests pass
-  - Run all unit tests
-  - Verify API server starts without errors
-  - Test WebSocket connections manually
-  - Test REST endpoints manually
-  - Ask the user if questions arise
+  - [ ]* 3.6 Write unit tests for RoundTracker
+    - Test `reset()` clears state after a partial round (1 or 2 darts)
+    - Test all 6 ring types produce correct score labels (T20, D16, S5, SB, DB, Miss)
+    - Test `dart_count` property reflects current state
+    - _File: `tests/test_api.py`_
 
-- [ ] 13. Write integration tests for end-to-end API flow
-  - [ ] 13.1 Test complete dart throw flow
-    - Push DartHitEvent to queue
-    - Verify broadcast to /ws/events clients
-    - Verify round aggregation
-    - Push 2 more DartHitEvents
-    - Verify RoundCompleteEvent broadcast to /ws/rounds clients
-    - _Requirements: AC-9.3.2, AC-9.4.2, AC-9.4.3_
-  
-  - [ ] 13.2 Test REST + WebSocket interaction
-    - Connect WebSocket clients
-    - Push events via queue
-    - Query /rounds/current during round
-    - Query /rounds/latest after completion
-    - Verify consistency between WebSocket and REST data
-    - _Requirements: AC-9.5.1, AC-9.5.2, AC-9.6.1, AC-9.6.2_
-  
-  - [ ] 13.3 Test multiple concurrent WebSocket clients
-    - Connect 10+ clients to each endpoint
-    - Push events via queue
-    - Verify all clients receive messages
-    - Test client disconnect during broadcast
-    - _Requirements: AC-9.3.4, AC-9.4.5_
+- [ ] 4. Checkpoint — ensure EventBus and RoundTracker tests pass
+  - Run `pytest tests/test_api.py tests/test_api_properties.py -v`
+  - Ask the user if questions arise.
 
-- [ ] 14. Final checkpoint - Ensure all tests pass
-  - Run all unit and integration tests
-  - Verify no memory leaks (long-running test)
-  - Verify WebSocket latency < 50ms
-  - Verify REST response time < 100ms
-  - Ask the user if questions arise
+- [ ] 5. Implement FastAPI server (`src/api/server.py`)
+  - [ ] 5.1 Create `create_app(event_bus, state_machine) -> FastAPI` factory
+    - No CORS restrictions (all clients on same LAN) — _Requirements: 7.4_
+    - On startup: call `event_bus.set_loop(asyncio.get_event_loop())`
+    - _Requirements: 7.1, 7.4_
+
+  - [ ] 5.2 Implement `GET /api/events` SSE endpoint
+    - Returns `StreamingResponse` with `media_type="text/event-stream"`
+    - Async generator subscribes to `event_bus.subscribe()`; yields each event as `"event: {event_type}\ndata: {json_payload}\n\n"`
+    - Sends keepalive comment `": keepalive\n\n"` every 15s when idle (use `asyncio.wait_for` with timeout)
+    - Catches `asyncio.CancelledError` on client disconnect; logs disconnect
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+  - [ ] 5.3 Implement `POST /api/reset` endpoint
+    - Calls `state_machine.dart_tracker.clear_all()` and sets `state_machine.current_state = State.WaitForThrow`
+    - Returns HTTP 200 `{"status": "ok", "message": "System reset"}` on success
+    - Returns HTTP 503 `{"status": "error", "message": "State machine not available"}` when `state_machine is None`
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+
+  - [ ] 5.4 Implement `start_server(app, host, port) -> None`
+    - Runs `uvicorn.run(app, host=host, port=port)` in a `daemon=True` thread
+    - _Requirements: 7.1, 7.3, 7.5_
+
+  - [ ]* 5.5 Write property test for darts_removed event generation (Property 7)
+    - **Property 7: darts_removed event generation** — for any `DartRemovedEvent` with `count_remaining == 0`, the conversion produces `{"event": "darts_removed", "message": "Ready for next round"}`; for `count_remaining > 0`, no event is produced
+    - **Validates: Requirements 4.1, 4.2**
+    - Test the helper function that converts `DartRemovedEvent` to SSE dict (extract as a pure function in `server.py` or `round_tracker.py`)
+    - _File: `tests/test_api_properties.py`_
+
+  - [ ]* 5.6 Write property test for reset restoring initial state (Property 8)
+    - **Property 8: Reset restores initial state** — for any `ThrowStateMachine` in any state with any number of tracked darts, calling the reset logic results in `current_state == State.WaitForThrow` and `dart_tracker.get_total_dart_count() == 0`
+    - **Validates: Requirements 5.2**
+    - _File: `tests/test_api_properties.py`_
+
+  - [ ]* 5.7 Write unit tests for server endpoints
+    - Test `GET /api/events` returns `text/event-stream` content type — _Requirements: 1.1_
+    - Test `POST /api/reset` returns HTTP 200 with `{"status": "ok", "message": "System reset"}` — _Requirements: 5.3_
+    - Test `POST /api/reset` returns HTTP 503 when state machine is `None` — _Requirements: 5.4_
+    - Test keepalive is sent within 15s of no events — _Requirements: 1.5_
+    - Use `httpx.AsyncClient` with FastAPI's `TestClient`
+    - _File: `tests/test_api.py`_
+
+- [ ] 6. Integrate with `main.py`
+  - [ ] 6.1 Add `--api-port` CLI flag (default: 8000) to `main()` argument parser
+    - _Requirements: 7.2_
+
+  - [ ] 6.2 Wire EventBus and RoundTracker into `run_state_machine_mode()`
+    - Accept optional `event_bus: EventBus | None` and `round_tracker: RoundTracker | None` parameters
+    - In the event handling loop: on `DartHitEvent`, call `round_tracker.process_hit(event)` and publish each returned dict to `event_bus`
+    - On `DartRemovedEvent` with `count_remaining == 0`: publish `{"event": "darts_removed", "message": "Ready for next round"}` to `event_bus` and call `round_tracker.reset()`
+    - _Requirements: 2.1, 4.1, 4.2_
+
+  - [ ] 6.3 Start API server when `--state-machine` flag is active
+    - In `main()`, after initializing `state_machine`, create `EventBus`, `RoundTracker`, and call `start_server(create_app(event_bus, state_machine), host="0.0.0.0", port=args.api_port)`
+    - Pass `event_bus` and `round_tracker` into `run_state_machine_mode()`
+    - _Requirements: 7.1, 7.2, 7.3, 7.5_
+
+- [ ] 7. Final checkpoint — ensure all tests pass
+  - Run `pytest tests/test_api.py tests/test_api_properties.py -v`
+  - Ask the user if questions arise.
 
 ## Notes
 
-- Each task references specific requirements for traceability
-- Checkpoints ensure incremental validation
-- Unit tests validate specific functionality
-- Integration tests validate end-to-end flows
-- API server runs in separate thread to avoid blocking detection loop
-- Thread-safe event queue ensures data consistency
-- Two WebSocket endpoints serve different consumer types
-- All tests are required for comprehensive validation
+- Tasks marked with `*` are optional and can be skipped for a faster MVP
+- Property tests use `@settings(max_examples=100)` and are tagged with `# Feature: step-9-web-api, Property N: ...`
+- The `EventBus` bridges sync (main loop) and async (FastAPI) worlds via `loop.call_soon_threadsafe`
+- `RoundTracker` is pure Python with no async dependencies — easy to unit test
+- The `darts_removed` SSE event is only emitted when `count_remaining == 0` (all darts pulled out)
