@@ -882,6 +882,7 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
     - Optionally saves pre/post/annotated images per throw (--save-images)
     """
     from src.fusion.dart_hit_event import DartHitEvent
+    from src.calibration.calibration_monitor import CalibrationMonitor
 
     logger.info("=== STATE MACHINE MODE ===")
     logger.info("Press 'q' or ESC to quit")
@@ -895,6 +896,9 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
         session_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Saving images to {session_dir}")
     throw_count = 0
+
+    # Calibration drift monitor
+    cal_monitor = CalibrationMonitor(config, coordinate_mapper, camera_ids)
 
     # Initialize background
     background_initialized = False
@@ -1091,7 +1095,15 @@ def run_state_machine_mode(camera_ids, camera_manager, motion_detector, backgrou
                             event_bus.publish({"event": "darts_removed", "message": "Ready for next round"})
                         if round_tracker is not None:
                             round_tracker.reset()
-                        # All darts removed — cooldown 2s before accepting new throws
+                        # All darts removed — run calibration check if due
+                        cal_monitor.on_round_complete()
+                        if cal_monitor.should_check():
+                            logger.info("Running calibration drift check...")
+                            drift_result = cal_monitor.check_drift(frames)
+                            if drift_result["needs_recalibration"]:
+                                logger.warning("Calibration drift detected, recalibrating...")
+                                cal_monitor.run_recalibration(frames)
+                        # Cooldown 2s before accepting new throws
                         pull_out_cooldown_until = current_time + 2.0
                         logger.info("Pull-out complete, cooldown 2s before next round")
                 elif isinstance(event, DartBounceOutEvent):
