@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AruDart video</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #111;
+      color: #fff;
+      display: grid;
+      place-items: center;
+    }
+    video {
+      max-width: 100%;
+      width: 960px;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <video controls playsinline>
+    <source src="./arudart.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</body>
+</html>
